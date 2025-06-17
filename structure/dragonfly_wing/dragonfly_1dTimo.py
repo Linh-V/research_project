@@ -6,12 +6,12 @@ import matplotlib.pyplot as plt
 
 # Paramters need to change according to the Dragonfly paramters:
 
-E = 70e9  # Young's Modulus in Pa (N/m²)
-b = 0.005
-h = 0.005
+E = 70e5  # Young's Modulus in Pa (N/m²)
+L = 10 # Beam length in cm
+b = 0.005*L
+h = 0.005*L
 A = b * h  # Cross-sectional area in m²
 I = b*(h**3)/12  # Second moment of inertia in m⁴
-L = 0.1 # Beam length in m
 nu = 0.3    # Poisson ratio
 k = 5/6     # Shear correction factor
 G = E/(2*(1+nu))    # Shear modulus
@@ -87,9 +87,9 @@ Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 
 # Test with beam code
 mfu = gf.MeshFem(Mesh, 2)  # Finite element for the elastic displacement
-mfu.set_fem(gf.Fem("FEM_PK(1,2)"))
+mfu.set_fem(gf.Fem("FEM_PK(1,3)"))
  
-mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(3)")) # Integration method  
+mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(5)")) # Integration method  
 
 ############## Initialising the model #############################
 
@@ -118,7 +118,7 @@ md.add_linear_term(mim, bending_term + " + " + shear_term)
 
 # Apply transverse force at the tip in global coordinates
 # Need to transform to local normal direction
-md.add_initialized_data('F_global', [F,0])
+md.add_initialized_data('F_global', [0,F])
 
 # Transform global force to local coordinates at the boundary
 # F_local_normal = F_global · normal_vector
@@ -138,7 +138,7 @@ md.solve()
 U = md.variable("u")
 
 max_u = np.max(np.abs(U[0::2]))
-print(f"Maximum transverse displacement: {max_u} meters")
+print(f"Maximum transverse displacement: {max_u} cm")
 
 # export computed solution using vtk format (you can load it with Paraview)
 mfu.export_to_vtk("Dragonfly_Timo.vtk", U, "Displacement")

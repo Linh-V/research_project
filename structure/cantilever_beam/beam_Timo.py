@@ -4,6 +4,7 @@
 
 import getfem as gf 
 import numpy as np
+import csv
 
 E = 70e9  # Young's Modulus in Pa
 H = 0.005 # Height in m
@@ -15,7 +16,7 @@ nu = 0.3    # Poisson ratio
 k = 5/6     # Shear correction factor
 G = E/(2*(1+nu))    # Shear modulus
 
-F = -0.01   # Force at the right Boundary in N
+F = -100   # Force at the right Boundary in N
 
 ############## Analytical solution #########################################################
 # Calculate analytical solution for comparison
@@ -52,7 +53,7 @@ mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 ############## Finite Element / Integration #################################
 
 mfu = gf.MeshFem(mesh, 2)  # Finite element for the elastic displacement
-mfu.set_fem(gf.Fem("FEM_PK(1,1)"))
+mfu.set_fem(gf.Fem("FEM_PK(1,3)"))
 
 mim = gf.MeshIm(mesh, gf.Integ("IM_GAUSS1D(5)")) # Integration method  
 
@@ -78,18 +79,6 @@ shear_term = "kGA * (Grad_u(1) - u(2)) * (Grad_Test_u(1) - Test_u(2))"
 # Add the complete bilinear form
 md.add_linear_term(mim, bending_term + " + " + shear_term)
 
-
-# # Bending energy: EI * dtheta/dx * d(delta_theta)/dx
-# bending_term = "EI * Grad_u(2,1) * Grad_Test_u(2,1)"
-
-# # Shear energy: kGA * (dw/dx - theta) * (d(delta_w)/dx - delta_theta)
-# shear_term = "kGA * (Grad_u(1,1) - u(2)) * (Grad_Test_u(1,1) - Test_u(2))"
-
-# # Add the complete bilinear form
-# md.add_linear_term(mim, bending_term + " + " + shear_term)
-
-
-
 ############## Applied Forces ################################################
 
 # Apply transverse force at the tip in global coordinates
@@ -114,8 +103,13 @@ md.solve()
 U = md.variable("u")
 print(U)
 
-max_u = np.max(np.abs(U[0::2]))
+u_transverse = U[0::2]
+
+max_u = np.max(np.abs(u_transverse))
 print(f"Maximum transverse displacement: {max_u} meters")
 
 # export computed solution using vtk format (you can load it with Paraview)
 mfu.export_to_vtk("Beam_Timo.vtk", U, "Displacement")
+with open('Beam_Timo.csv', 'w', newline = '') as csvfile:
+    my_writer = csv.writer(csvfile, delimiter = ',')
+    my_writer.writerow(u_transverse)
