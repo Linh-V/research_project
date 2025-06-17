@@ -1,5 +1,7 @@
 # DRAGONFLY WING BEAM #
 
+#Something weird that will allow cheking
+
 import getfem as gf 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -78,13 +80,6 @@ Mesh.set_region(NEUMANN_BOUNDARY, fright)
 Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 
 ############## Finite Element / Integration #################################
-
-# mf = gf.MeshFem(Mesh,1)    # the first input is the mesh the second input is the order of the field to be solved
-# mf.set_fem(gf.Fem('FEM_HERMITE(1)'))  # assigning a Lagrangian polynomial of deg 1 on the 1D element 
-
-# mim = gf.MeshIm(Mesh,gf.Integ('IM_GAUSS1D(5)'))   # Integration method: Exact integration on simplices of 1st order
-                                                        # simplest method, only possible with linear geometric tranformation & PK_FEM
-
 # Test with beam code
 mfu = gf.MeshFem(Mesh, 2)  # Finite element for the elastic displacement
 mfu.set_fem(gf.Fem("FEM_PK(1,3)"))
