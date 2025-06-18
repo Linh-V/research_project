@@ -44,6 +44,8 @@ points = np.array([
 
 points = points*L
 
+
+
 # creating the mesh with all the wing's node points
 Mesh = gf.Mesh('empty', 2)
 ind = []
@@ -82,9 +84,9 @@ Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 ############## Finite Element / Integration #################################
 # Test with beam code
 mfu = gf.MeshFem(Mesh, 2)  # Finite element for the elastic displacement
-mfu.set_fem(gf.Fem("FEM_PK(1,5)"))
- 
-mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(17)")) # Integration method  
+mfu.set_fem(gf.Fem("FEM_PK(1,8)"))
+
+mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(99)")) # Integration method  
 
 ############## Initialising the model #############################
 
@@ -139,10 +141,76 @@ print(f"Maximum transverse displacement: {max_u} cm")
 w = U[0::2]  # Transverse displacements
 theta = U[1::2]  # Rotations
 
-U_2D = np.zeros((len(w), 2))
-U_2D[:, 1] = w  # Transverse displacement in y-direction
-U_2D_flat = U_2D.flatten()
+def project_displacements_to_global(w, theta, points, mfu):
+    """
+    Project local beam displacements to global x,y coordinates
+    
+    Parameters:
+    w: transverse displacements in local coordinates (all DOFs)
+    theta: rotations (all DOFs)
+    points: node coordinates
+    beam_angles: angle of each beam segment
+    mfu: mesh fem object to get DOF coordinates
+    
+    Returns:
+    global_displacements: Nx2 array of [dx, dy] displacements for all DOFs
+    dof_coordinates: Nx2 array of coordinates for all DOFs
+    """
+    
+    # Get coordinates of all DOFs (including higher-order nodes)
+    dof_coordinates = mfu.basic_dof_nodes()
+    print(len(dof_coordinates[1]))
+    n_dofs = len(w)
+    
+    global_displacements = np.zeros((n_dofs, 2))
+    
+    # For each DOF point
+    for i in range(n_dofs):
+        dof_coord = dof_coordinates[:, i]  # [x, y] coordinate of this DOF
+        
+        # Find which beam segment this DOF belongs to
+        angle = np.arctan2(dof_coord[1],dof_coord[0])
+    
+        # Local transverse displacement
+        w_local = w[i]
+        
+        # Transform to global coordinates
+        # Local coordinate system: x_local along beam, y_local perpendicular to beam
+        # For transverse displacement w (perpendicular to beam):
+        # The transverse direction is perpendicular to the beam direction
+        # If beam direction is (cos(angle), sin(angle)), then perpendicular is (-sin(angle), cos(angle))
+        dx_global = w_local * (np.sin(-angle))
+        dy_global = w_local * (np.cos(angle))
+        
+        global_displacements[i, :] = [dx_global, dy_global]
+    
+    return global_displacements, dof_coordinates
 
+
+
+# Project displacements to global coordinates
+global_displacements, dof_coordinates = project_displacements_to_global(w, theta, points, mfu)
+
+    
+
+print(global_displacements)
+
+
+############## VTK Export ####################################
+
+# Create 2D mesh fem for export (must match the DOF structure)
 mfu_2d = gf.MeshFem(Mesh, 2)  # 2D displacement field
-mfu_2d.set_fem(gf.Fem("FEM_PK(1,5)"))
-mfu_2d.export_to_vtk("Dragonfly_Timo.vtk", U_2D_flat, "Displacement")
+mfu_2d.set_fem(gf.Fem("FEM_PK(1,8)"))
+
+# Flatten global displacements for VTK export
+# VTK expects data in the format [x1, y1, x2, y2, x3, y3, ...]
+global_displacements_flat = global_displacements.flatten()
+
+
+
+# Ensure the data length matches the expected DOF count
+mfu_2d.export_to_vtk("Dragonfly_Global_Displacements3.vtk", global_displacements_flat, "Global_Displacement")
+-2.48985565e+00
+-2.48814250e+00
+-2.48918826e+00
+-2.48820010e+00
