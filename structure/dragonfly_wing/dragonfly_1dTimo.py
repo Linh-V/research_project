@@ -82,9 +82,9 @@ Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 ############## Finite Element / Integration #################################
 # Test with beam code
 mfu = gf.MeshFem(Mesh, 2)  # Finite element for the elastic displacement
-mfu.set_fem(gf.Fem("FEM_PK(1,3)"))
+mfu.set_fem(gf.Fem("FEM_PK(1,5)"))
  
-mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(5)")) # Integration method  
+mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(17)")) # Integration method  
 
 ############## Initialising the model #############################
 
@@ -104,7 +104,7 @@ md.add_initialized_data("EI", E*I)
 bending_term = "EI * Grad_u(2,1) * Grad_Test_u(2,1)"
 
 # Shear energy: kGA * (dw/dx - theta) * (d(delta_w)/dx - delta_theta)
-shear_term = "kGA * (Grad_u(1,1) - u(2)) * (Grad_Test_u(1,1) - Test_u(2))"
+shear_term = "kGA * (Grad_u(1,1) - u(2)) * (Grad_Test_u(1, 1) - Test_u(2))"
 
 # Add the complete bilinear form
 md.add_linear_term(mim, bending_term + " + " + shear_term)
@@ -113,7 +113,7 @@ md.add_linear_term(mim, bending_term + " + " + shear_term)
 
 # Apply transverse force at the tip in global coordinates
 # Need to transform to local normal direction
-md.add_initialized_data('F_global', [0,F])
+md.add_initialized_data('F_global', [F, 0])
 
 # Transform global force to local coordinates at the boundary
 # F_local_normal = F_global · normal_vector
@@ -135,7 +135,14 @@ U = md.variable("u")
 max_u = np.max(np.abs(U[0::2]))
 print(f"Maximum transverse displacement: {max_u} cm")
 
-# export computed solution using vtk format (you can load it with Paraview)
-mfu.export_to_vtk("Dragonfly_Timo.vtk", U, "Displacement")
+# Extract displacements and rotations
+w = U[0::2]  # Transverse displacements
+theta = U[1::2]  # Rotations
 
-print(U)
+U_2D = np.zeros((len(w), 2))
+U_2D[:, 1] = w  # Transverse displacement in y-direction
+U_2D_flat = U_2D.flatten()
+
+mfu_2d = gf.MeshFem(Mesh, 2)  # 2D displacement field
+mfu_2d.set_fem(gf.Fem("FEM_PK(1,5)"))
+mfu_2d.export_to_vtk("Dragonfly_Timo.vtk", U_2D_flat, "Displacement")
