@@ -1,95 +1,81 @@
 import getfem as gf
 import numpy as np
 import os
-import json
+from regions_check import verify_regions
+
 # geometric paramters:
 L = 10
 thickness = 0.005*L
 
 # Material properties
-E = 70e5                                        # Young Modulus  ---> 70 Gpa
+E = 70e5                                      # Young Modulus  ---> 70 Gpa
 nu = 0.33                                       # Poisson ratio
-clambda = E*nu/((1+nu)*(1-nu))                # First Lame coefficient (N/cm^2)
+clambda = E*nu/((1+nu)*(1-nu))                  # First Lame coefficient (N/cm^2)
 cmu = E/(2*(1+nu))                              # Second Lame coefficient (N/cm^2)
 
 # Force
-F = - 0.01 /(thickness**2)                                     # Force at the right Boundary (N)
+F = - 0.01 /(thickness**2)                      # Force at the right Boundary (N)
 
 
 
 # IMPORT OF THE DRAGONFLY GMSH 
-# Note: it's possible to automated the refinement of the mesh by using gmsh on python 
-# look into that by using GMSH api 
 
-m = gf.Mesh('Import','gmsh','structure/dragonfly_wing/dragonfly2.msh')
-# #set region of the mesh: 
-left_face = m.outer_faces_with_direction([-1., 0.], 0.01) # Left boundary
-rigt_face = m.outer_faces_with_direction([1,0], 0.01) # right boundary 
-LEFT = 40
-RIGHT = 20  
-m.set_region(LEFT, left_face)
-m.set_region(RIGHT, rigt_face)
-# Beam_left = 1 
-# Beam_bottom = 2 
-# Beam_right = 3 
-# Beam_top = 4 
-
+m = gf.Mesh('Import','gmsh','dragonfly2_quads.msh')
+#verify_regions(m,'quadmeshcheck')
+# # triangles
+# LEFT = 1
+# RIGHT = 17
+# quads
+LEFT = 31
+RIGHT = 46
 # selection of finite element
-mu_ = gf.MeshFem(m,2)
-mu_.set_fem(gf.Fem('FEM_PK(2,4)'))
-#mu_.set_fem(gf.Fem('FEM_QK(2,5)'))
-#mu.set_fem(gf.Fem("FEM_Q2_INCOMPLETE(2)"))
-# slection of integration method
-mim = gf.MeshIm(m, gf.Integ('IM_TRIANGLE(17)'))
-#mim = gf.MeshIm(m, gf.Integ('IM_QUAD(17)'))
+mu = gf.MeshFem(m, 2)
+mu.set_fem(gf.Fem('FEM_Q2_INCOMPLETE(2)'))
+mim = gf.MeshIm(m, gf.Integ('IM_QUAD(5)'))  # Standard integration OK
 
-# kept_dofs = list(
-#                 set(range(mu_.nbdof()))
-#                 -set(mu_.basic_dof_on_region(LEFT))
-        
-#                  )
-
-#mu= gf.MeshFem('partial', mu_, kept_dofs)
-mu = mu_
 # MODEL
 md = gf.Model("real")
 md.add_fem_variable("u",mu)
 md.add_initialized_data('cmu', [cmu])
 md.add_initialized_data('clambda', [clambda])
 
-# md.add_macro("eps(u)", "0.5*(Grad_u + Grad_u')")
-# md.add_macro("sigma(u)", "2*cmu*eps(u) + clambda*Id(2)*Div_u")
 
-md.add_isotropic_linearized_elasticity_brick(mim, 'u', 'clambda', 'cmu')
 
-#md.add_linear_term(mim, "(cmu * (Grad_u + Grad_u') : Grad_Test_u + clambda * Div_u * Div_Test_u)") # wrong
-# md.add_linear_generic_assembly_brick(mim,"[Grad_Test_u(1,1),Grad_Test_u(2,2),Grad_Test_u(1,2)+Grad_Test_u(2,1)]'." \
-# "[[clambda + 2*cmu, clambda, 0],[clambda,clambda + 2*cmu,0],[0, 0, cmu]]."
-# "[Grad_u(1,1),Grad_u(2,2),Grad_u(1,2)+Grad_u(2,1)]")
-#md.add_linear_term(mim, "sigma(u):eps(Test_u)")
-md.add_initialized_data('ForceData*normal',[0,F])
-#md.add_initialized_data('ForceData',[10,0])
+
+md.add_macro("eps(u)", "0.5*(Grad_u + Grad_u')")
+md.add_macro("sigma(u)", "2*cmu*eps(u) + clambda*Id(2)*Div_u")
+md.add_linear_term(mim, "sigma(u):eps(Test_u)")
+#md.add_isotropic_linearized_elasticity_brick(mim, 'u', 'clambda', 'cmu')
+md.add_initialized_data('ForceData',[0,F])
 
 md.add_source_term_brick(mim, 'u', 'ForceData', RIGHT)
-
+# Check deflection/length ratio
 
 
 # BOUNDARY CONDITIONS:
 
 md.add_Dirichlet_condition_with_multipliers(mim,'u', mu, LEFT)
 
-print("solving")
 md.solve()
-print("solved")
-##Print the stiffness matrix
-#print(md.brick_list())
-#print('stiffness_matrix',md.matrix_term(0,0))
 
 U = md.variable("u")
+# Separate x and y displacements
+u_x = U[0::2]  # x-displacements
+u_y = U[1::2]  # y-displacements
+if max(abs(u_y))/L > 0.1:
+    print("WARNING: Large deflection - linear theory may not be valid")
+
+print(f"Maximum displacement: {max(abs(u_y))} (cm)")
+
 FolderName = "LinearElasticityResults"
 os.system(f'mkdir {FolderName}')
-SaveFile = os.path.join(FolderName,'2d_dragonfly.vtk')
-print(gf.compute_error_estimate(mu,U,mim))
+SaveFile = os.path.join(FolderName,'2d_dragonfly_quads.vtk')
 mu.export_to_vtk(SaveFile,  mu, U, 'Displacements')
-print("saved")
 
+
+# Regions for b.c seems correct,
+# THe results seems mesh indipendent, test with difference types of mesh and different dimension
+# the physics seems correct becuase it works fine with the beam
+# what else could be different? 
+# types of element instead of qk?
+# maybe the rotation? 

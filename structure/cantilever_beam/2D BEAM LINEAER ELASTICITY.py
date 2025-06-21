@@ -21,7 +21,7 @@ F = - 0.01 /(thickness**2)                                     # Force at the ri
 # Note: it's possible to automated the refinement of the mesh by using gmsh on python 
 # look into that by using GMSH api 
 
-m = gf.Mesh('Import','gmsh','MESH_GMSH/Beam_refined.msh')
+m = gf.Mesh('Import','gmsh','Beam.msh')
 # #set region of the mesh: 
 # # left_face = m.outer_faces_with_direction([-1., 0.], 0.01) # Left boundary
 # # rigt_face = m.outer_faces_with_direction([1,0], 0.01) # right boundary 
@@ -85,9 +85,19 @@ md.solve()
 #print('stiffness_matrix',md.matrix_term(0,0))
 
 U = md.variable("u")
-FolderName = "LinearElasticityResults"
-os.system(f'mkdir {FolderName}')
-SaveFile = os.path.join(FolderName,'2d_BEAM_flux_4.vtk')
-print(gf.compute_error_estimate(mu,U,mim))
-mu.export_to_vtk(SaveFile,  mu, U, 'Displacements')
+# Separate x and y displacements
+u_x = U[0::2]  # x-displacements
+u_y = U[1::2]  # y-displacements
+
+
+print(f"Maximum displacement: {max(abs(u_x))} (cm)")
+print(f"Maximum displacement: {max(abs(u_y))} (cm)")
+if max(abs(u_y))/L > 0.1:
+    print("WARNING: Large deflection - linear theory may not be valid")
+
+# FolderName = "LinearElasticityResults"
+# os.system(f'mkdir {FolderName}')
+# SaveFile = os.path.join(FolderName,'2d_BEAM_flux_4.vtk')
+# print(gf.compute_error_estimate(mu,U,mim))
+# mu.export_to_vtk(SaveFile,  mu, U, 'Displacements')
 
