@@ -3,42 +3,43 @@
 
 lc = 1e-2;
 L = 10; // (cm)
+thickness = 0.005*L;
 // Bottom layer points
-Point(1) = {0, 0, 0, lc};
-Point(2) = {0.09*L, 0, 0, lc};
-Point(3) = {0.14*L, 0.055*L, 0, lc};
-Point(4) = {0.19*L, 0, 0, lc};
-Point(5) = {0.24*L, 0.055*L, 0, lc};
-Point(6) = {0.29*L, 0, 0, lc};
-Point(7) = {0.34*L, 0, 0, lc};
-Point(8) = {0.5*L, 0.02*L, 0, lc};
-Point(9) = {0.6*L, 0.06*L, 0, lc};
-Point(10) = {0.7*L, 0.08*L, 0, lc};
-Point(11) = {0.75*L, 0.085*L, 0, lc};
-Point(12) = {0.8*L, 0.08*L, 0, lc};
-Point(13) = {0.85*L, 0.07*L, 0, lc};
-Point(14) = {0.9*L, 0.055*L, 0, lc};
-Point(15) = {0.95*L, 0.04*L, 0, lc};
-Point(16) = {1*L, 0.025*L, 0, lc};
+// Bottom layer points (centerline - thickness/2)
+Point(1) = {0, -thickness/2, 0, lc};
+Point(2) = {0.09*L, -thickness/2, 0, lc};
+Point(3) = {0.14*L, 0.055*L - thickness/2, 0, lc};
+Point(4) = {0.19*L, -thickness/2, 0, lc};
+Point(5) = {0.24*L, 0.055*L - thickness/2, 0, lc};
+Point(6) = {0.29*L, -thickness/2, 0, lc};
+Point(7) = {0.34*L, -thickness/2, 0, lc};
+Point(8) = {0.5*L, 0.02*L - thickness/2, 0, lc};
+Point(9) = {0.6*L, 0.06*L - thickness/2, 0, lc};
+Point(10) = {0.7*L, 0.08*L - thickness/2, 0, lc};
+Point(11) = {0.75*L, 0.085*L - thickness/2, 0, lc};
+Point(12) = {0.8*L, 0.08*L - thickness/2, 0, lc};
+Point(13) = {0.85*L, 0.07*L - thickness/2, 0, lc};
+Point(14) = {0.9*L, 0.055*L - thickness/2, 0, lc};
+Point(15) = {0.95*L, 0.04*L - thickness/2, 0, lc};
+Point(16) = {1*L, 0.025*L - thickness/2, 0, lc};
 
-// Top layer points (y + 0.005)
-Point(17) = {0, 0.005*L, 0, lc};
-Point(18) = {0.09*L, 0.005*L, 0, lc};
-Point(19) = {0.14*L, 0.06*L, 0, lc};
-Point(20) = {0.19*L, 0.005*L, 0, lc};
-Point(21) = {0.24*L, 0.06*L, 0, lc};
-Point(22) = {0.29*L, 0.005*L, 0, lc};
-Point(23) = {0.34*L, 0.005*L, 0, lc};
-Point(24) = {0.5*L, 0.025*L, 0, lc};
-Point(25) = {0.6*L, 0.065*L, 0, lc};
-Point(26) = {0.7*L, 0.085*L, 0, lc};
-Point(27) = {0.75*L, 0.09*L, 0, lc};
-Point(28) = {0.8*L, 0.085*L, 0, lc};
-Point(29) = {0.85*L, 0.075*L, 0, lc};
-Point(30) = {0.9*L, 0.06*L, 0, lc};
-Point(31) = {0.95*L, 0.045*L, 0, lc};
-Point(32) = {1*L, 0.03*L, 0, lc};
-
+// Top layer points (centerline + thickness/2)
+Point(17) = {0, thickness/2, 0, lc};
+Point(18) = {0.09*L, thickness/2, 0, lc};
+Point(19) = {0.14*L, 0.055*L + thickness/2, 0, lc};
+Point(20) = {0.19*L, thickness/2, 0, lc};
+Point(21) = {0.24*L, 0.055*L + thickness/2, 0, lc};
+Point(22) = {0.29*L, thickness/2, 0, lc};
+Point(23) = {0.34*L, thickness/2, 0, lc};
+Point(24) = {0.5*L, 0.02*L + thickness/2, 0, lc};
+Point(25) = {0.6*L, 0.06*L + thickness/2, 0, lc};
+Point(26) = {0.7*L, 0.08*L + thickness/2, 0, lc};
+Point(27) = {0.75*L, 0.085*L + thickness/2, 0, lc};
+Point(28) = {0.8*L, 0.08*L + thickness/2, 0, lc};
+Point(29) = {0.85*L, 0.07*L + thickness/2, 0, lc};
+Point(30) = {0.9*L, 0.055*L + thickness/2, 0, lc};
+Point(31) = {0.95*L, 0.04*L + thickness/2, 0, lc};
+Point(32) = {1*L, 0.025*L + thickness/2, 0, lc};
 // Leading edge
 Line(1) = {1, 17};
 
@@ -105,8 +106,8 @@ Physical Line(TRAILING) = {17};
 Physical Line(TOP)      = {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
 
 // Mesh controls (if needed)
-//Recombine Surface{1}; 
-Mesh.Algorithm = 6;
+
+Mesh.Algorithm = 5;
 Mesh 2;
 Save "dragonfly2.msh";
 

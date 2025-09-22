@@ -86,6 +86,10 @@ Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 mfu = gf.MeshFem(Mesh, 2)  # Finite element for the elastic displacement
 mfu.set_fem(gf.Fem("FEM_PK(1,8)"))
 
+mfl = gf.MeshFem(Mesh, 2)
+mfl.set_fem(gf.Fem("FEM_PK(1,8)"))
+
+
 mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(99)")) # Integration method  
 
 ############## Initialising the model #############################
@@ -95,10 +99,14 @@ md = gf.Model('real')
 
 # declare that the unknowns of the system on the finite element method "mfu"
 md.add_fem_variable("u", mfu)        # Displacement [w, theta]
+md.add_fem_variable("l", mfl)
+
 
 # Adding a constant scalar value
+
 md.add_initialized_data("kGA", k*G*A)
 md.add_initialized_data("EI", E*I)
+md.add_initialized_data("EA", E*A)
 
 ############## Weak Form for Timoshenko Beam ####################################
 
@@ -108,24 +116,28 @@ bending_term = "EI * Grad_u(2,1) * Grad_Test_u(2,1)"
 # Shear energy: kGA * (dw/dx - theta) * (d(delta_w)/dx - delta_theta)
 shear_term = "kGA * (Grad_u(1,1) - u(2)) * (Grad_Test_u(1, 1) - Test_u(2))"
 
+# compression term: 
+comp_term = "EA* Grad_l.Grad_Test_l"
+
+
 # Add the complete bilinear form
-md.add_linear_term(mim, bending_term + " + " + shear_term)
+md.add_linear_term(mim, bending_term + " + " + shear_term )
+md.add_linear_term(mim, comp_term)
 
 ############## Applied Forces ################################################
 
 # Apply transverse force at the tip in global coordinates
 # Need to transform to local normal direction
 md.add_initialized_data('F_global', [F, 0])
-
 # Transform global force to local coordinates at the boundary
 # F_local_normal = F_global · normal_vector
 md.add_source_term_brick(mim, 'u', 'F_global', NEUMANN_BOUNDARY)
-
+md.add_source_term_brick(mim, "l", 'F', NEUMANN_BOUNDARY)
 ############## Boundary Conditions ########################################################
 
 # Fix the left side
 md.add_Dirichlet_condition_with_multipliers(mim, "u", 2, DIRICHLET_BOUNDARY)
-
+md.add_Dirichlet_condition_with_multipliers(mim, "l", 2, DIRICHLET_BOUNDARY)
 ############### Solve and Export #############################################
 
 # solve the linear system
@@ -133,7 +145,7 @@ md.solve()
 
 # main unknown
 U = md.variable("u")
-
+l = md.variable("l")
 max_u = np.max(np.abs(U[0::2]))
 print(f"Maximum transverse displacement: {max_u} cm")
 
@@ -206,7 +218,7 @@ mfu_2d.set_fem(gf.Fem("FEM_PK(1,8)"))
 # VTK expects data in the format [x1, y1, x2, y2, x3, y3, ...]
 global_displacements_flat = global_displacements.flatten()
 
-
+print("compressiom", l)
 
 # Ensure the data length matches the expected DOF count
 mfu_2d.export_to_vtk("Dragonfly_Global_Displacements3.vtk", global_displacements_flat, "Global_Displacement")

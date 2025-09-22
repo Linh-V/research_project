@@ -14,7 +14,7 @@ clambda = E*nu/((1+nu)*(1-nu))                  # First Lame coefficient (N/cm^2
 cmu = E/(2*(1+nu))                              # Second Lame coefficient (N/cm^2)
 
 # Force
-F = - 0.01 /(thickness**2)                      # Force at the right Boundary (N)
+F = - 0.01 /(thickness*0.1)                   # Force at the right Boundary (N)
 
 
 
@@ -31,7 +31,7 @@ RIGHT = 46
 # selection of finite element
 mu = gf.MeshFem(m, 2)
 mu.set_fem(gf.Fem('FEM_Q2_INCOMPLETE(2)'))
-mim = gf.MeshIm(m, gf.Integ('IM_QUAD(5)'))  # Standard integration OK
+mim = gf.MeshIm(m, gf.Integ('IM_QUAD(17)'))  # Standard integration OK
 
 # MODEL
 md = gf.Model("real")
