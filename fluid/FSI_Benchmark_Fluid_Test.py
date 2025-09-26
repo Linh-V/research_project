@@ -3,8 +3,7 @@ from Functions import verify_regions, mesh_statistics_corrected
 import numpy as np
 import os
 
-gf.util_trace_level(1)
-gf.util_warning_level(1)
+print("Number of elements in the fluid mesh:")
 π = np.pi
 ################################
 # Beam in a Fluid:
@@ -45,8 +44,9 @@ theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 ## MESH ##
 #############
 
-Mesh_fluid= gf.Mesh('Import', 'gmsh','MESH_GMSH/Fluid.msh')
-Mesh_fluid.export_to_vtk('MESH_GMSH/Fluid.vtk') # Export mesh to VTK for visualization
+Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/cylinder.msh')
+#Mesh_fluid.export_to_vtk('MESH_GMSH/Fluid.vtk') # Export mesh to VTK for visualization
+print("Number of elements in the fluid mesh:")
 mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
 #############
