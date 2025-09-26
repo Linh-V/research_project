@@ -1,9 +1,74 @@
 import getfem as gf 
-from Functions import verify_regions, mesh_statistics_corrected
 import numpy as np
 import os
+from Functions import verify_regions, mesh_statistics_corrected
 
-print("Number of elements in the fluid mesh:")
+
+
+def check_mesh_quality(mesh, U_mean, D, nu, dt):
+    """Check mesh quality for cylinder flow simulation"""
+    
+    # 1. Get mesh element sizes using convex_radius
+    radii = mesh.convex_radius()
+    h_min = np.min(radii) * 2  # Diameter = 2 * radius
+    h_max = np.max(radii) * 2
+    h_mean = np.mean(radii) * 2
+    
+    print(f"Mesh element sizes:")
+    print(f"  h_min = {h_min:.3e}, h_max = {h_max:.3e}, h_mean = {h_mean:.3e}")
+    
+    # 2. Reynolds number
+    Re = U_mean * D / nu
+    print(f"\nReynolds number: Re = {Re:.1f}")
+    
+    # 3. Boundary layer thickness estimate
+    delta_bl = D / np.sqrt(Re) if Re > 0 else D
+    print(f"Boundary layer thickness: δ ≈ {delta_bl:.3e}")
+    
+    # 4. Required resolution checks
+    n_cells_in_bl = delta_bl / h_min
+    print(f"Cells in boundary layer: ~{n_cells_in_bl:.1f}")
+    
+    # 5. CFL condition
+    CFL = U_mean * dt / h_min
+    print(f"\nCFL number: {CFL:.3f}")
+    
+    # 6. Check mesh quality
+    quality = mesh.quality()
+    q_min = np.min(quality)
+    q_mean = np.mean(quality)
+    poor_elements = np.sum(quality < 0.5)
+    
+    print(f"\nMesh quality:")
+    print(f"  Min quality: {q_min:.3f}, Mean quality: {q_mean:.3f}")
+    if poor_elements > 0:
+        print(f"  ⚠ WARNING: {poor_elements} elements with quality < 0.5")
+    
+    # 7. Recommendations based on Re
+    print("\nRecommendations:")
+    if Re < 50:
+        print("- Steady flow regime: Current mesh likely OK")
+        cells_on_cylinder = np.pi * D / h_min
+        print(f"  Estimated cells on cylinder: ~{cells_on_cylinder:.0f}")
+    elif Re < 200:
+        print("- Unsteady laminar: Need 100-200 cells on cylinder circumference")
+        cells_on_cylinder = np.pi * D / h_min
+        print(f"  Estimated cells on cylinder: ~{cells_on_cylinder:.0f}")
+    else:
+        print("- Higher Re regime: Need finer mesh")
+        print(f"  Kolmogorov scale (if turbulent): η ≈ {D/Re**0.75:.3e}")
+    
+    if n_cells_in_bl < 10:
+        print("\n⚠ WARNING: Insufficient boundary layer resolution (< 10 cells)")
+        
+    if CFL > 1:
+        print("⚠ WARNING: CFL > 1, reduce time step or increase mesh size!")
+    elif CFL < 0.1:
+        print("⚠ Note: CFL < 0.1, you might be able to use larger time steps")
+
+    return h_min, h_max, CFL
+
+
 π = np.pi
 ################################
 # Beam in a Fluid:
@@ -23,15 +88,15 @@ scale_factor = 1 #m -> m  (it can be used if we want to pass from meter to anyth
 
 
 # Fluid properties (air):
-ν_fluid = 0.015e-4 * scale_factor**2                # m²/s 
-rho_fluid = 1.23 /(scale_factor**3  )               # kg/m³ 
+ν_fluid = 1.516e-5 * scale_factor**2                # m²/s 
+rho_fluid = 1.204 /(scale_factor**3  )               # kg/m³ 
 
 
 
 # Boundaries values: 
 # Inlet velocity parameters
-U_mean = 1.0     # Mean inlet velocity
-H = 0.41           # Channel height
+U_mean = 0.1       # Mean inlet velocity m/s
+H = 0.2          # Channel height m
 
 # Transient paramters: 
 T = 10.0           # Total simulation time
@@ -45,8 +110,7 @@ theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 #############
 
 Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/cylinder.msh')
-#Mesh_fluid.export_to_vtk('MESH_GMSH/Fluid.vtk') # Export mesh to VTK for visualization
-print("Number of elements in the fluid mesh:")
+Mesh_fluid.export_to_vtk('fluid/Fluid.vtk') 
 mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
 #############
@@ -57,45 +121,51 @@ regions flagging in gmsh does not work thus it's necessary to give a region for 
  
 """
 
-Beam_left = 1 
-Beam_bottom = 2 
-Beam_right = 3 
-Beam_top = 4 
+Bottom_left = 1 
+Bottom_right = 2
+Top_left = 3
+Top_right = 4 
 INLET = 5 
-Wall_bottom = 6
 OUTLET = 7  
-Wall_top = 8 
+Cylinedr_1 = 8
+Cylinder_2 = 9
+Cylinder_3 = 10
+Cylinder_4 = 11
 
-BEAM_INTERFACE = 100
+CYLINDER_INTERFACE = 100
 
-Mesh_fluid.region_merge(BEAM_INTERFACE, Beam_left)
-Mesh_fluid.region_merge(BEAM_INTERFACE, Beam_right)
-Mesh_fluid.region_merge(BEAM_INTERFACE, Beam_bottom)
-Mesh_fluid.region_merge(BEAM_INTERFACE, Beam_top)
+Mesh_fluid.region_merge(CYLINDER_INTERFACE, Cylinedr_1)
+Mesh_fluid.region_merge(CYLINDER_INTERFACE, Cylinder_2)
+Mesh_fluid.region_merge(CYLINDER_INTERFACE, Cylinder_3)
+Mesh_fluid.region_merge(CYLINDER_INTERFACE, Cylinder_4)
 
 # physical surface: 
-fluid1 = 9
-fluid2 = 11
-fluid3 = 10
-fluid4 = 13
-
+fluid1 = 6 #to check
+fluid2 = 12
+fluid3 = 13
+fluid4 = 14
+fluid5 = 15
 
 FLUID = 101
 Mesh_fluid.region_merge(FLUID,fluid1)
 Mesh_fluid.region_merge(FLUID,fluid2)
 Mesh_fluid.region_merge(FLUID,fluid3)
 Mesh_fluid.region_merge(FLUID,fluid4)
+Mesh_fluid.region_merge(FLUID,fluid5)
 
 WALLS  = 102
-Mesh_fluid.region_merge(WALLS,Wall_top)
-Mesh_fluid.region_merge(WALLS,Wall_bottom)
+Mesh_fluid.region_merge(WALLS,Bottom_left)
+Mesh_fluid.region_merge(WALLS,Bottom_right)
+Mesh_fluid.region_merge(WALLS,Top_left)
+Mesh_fluid.region_merge(WALLS,Top_right)
 
-#verify_regions(Mesh_solid, 'meshsolid')
+#verify_regions(Mesh_fluid, 'fluid/meshfluid')
+
 ########################
 ## INTEGRATION METHOD ##
 ########################
 """
-The integration method is quadrature with 17 points, which is suitable for QK elements.  
+The integration method is quadrature with 7 points, which is suitable for QK elements.  
 """
 mim_fluid = gf.MeshIm(Mesh_fluid, gf.Integ('IM_QUAD(7)'))
 
@@ -125,7 +195,7 @@ Instead of applying dirichelt boundary coniditons, the degree of freedom are rem
 kept_dofs_v_f = list(
                 set(range(mfv_fluid_.nbdof()))
                 -set(mfv_fluid_.basic_dof_on_region(WALLS))
-                -set(mfv_fluid_.basic_dof_on_region(BEAM_INTERFACE))
+                -set(mfv_fluid_.basic_dof_on_region(CYLINDER_INTERFACE))
                 )
                 
 
@@ -232,16 +302,16 @@ V_inlet = V_inlet_full[kept_dofs_v_f]
 
 md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet) 
 
-# Replace penalty terms with:
+# DIRICHLET CONDITIONS
 md.add_Dirichlet_condition_with_penalization(mim_fluid, "v_f", 10**3, INLET, "V_inlet")
-md.add_Dirichlet_condition_with_penalization(mim_fluid, 'p', 10**3, OUTLET)
+
 
 ####################
 ## MODEL SOLOTION ##
 ####################
 
 # Create output directory
-output_dir = "Results"
+output_dir = "fluid/Results_fluid"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
@@ -267,11 +337,12 @@ while t < T:
     V_inlet_full = md.interpolation(V_inlet_expr, mfv_fluid_)
     V_inlet = V_inlet_full[kept_dofs_v_f]
     md.set_variable("V_inlet", V_inlet)
+
     if step > 0:  # After first solve
-        
         print(f'time is: {t} and ramp_factor is {ramp_factor} and velocity is {V_inlet}')
     
-    
+
+    check_mesh_quality(Mesh_fluid, U_mean, 0.07071078, ν_fluid, dt)
     # More robust solver parameters
     md.solve("noisy", 
          "max_iter", 100,
@@ -286,7 +357,6 @@ while t < T:
     p = md.variable("p")
    
     
-
     mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{step:05d}.vtu",
                             mfv_fluid, v_f, "Velocity", 
                             mfp_fluid, p, "Pressure")

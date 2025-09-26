@@ -117,7 +117,3 @@ Physical Curve("Outlet", 1002) = {7};
 Physical Curve("Wall", 1003) = {4, 3, 1, 2};
 //+
 Physical Curve("Cylinder", 1004) = {10, 11, 8, 9};
-//+
-Physical Curve("Walls", 1006) = {4, 3, 1, 2};
-//+
-Physical Curve("Cylinder", 1005) += {11, 8, 9, 10};
