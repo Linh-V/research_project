@@ -88,10 +88,10 @@ Mesh.set_region(DIRICHLET_BOUNDARY, fleft)
 # - 1 DOF for rotation (theta)
 
 mfu = gf.MeshFem(Mesh, 2)  # For displacement (u, w)
-mfu.set_fem(gf.Fem("FEM_PK(1,3)"))  # Quadratic elements for displacement
+mfu.set_fem(gf.Fem("FEM_PK(1,2)"))  # Quadratic elements for displacement
 
 mftheta = gf.MeshFem(Mesh, 1)  # For rotation theta
-mftheta.set_fem(gf.Fem("FEM_PK(1,3)"))  # Linear elements for rotation
+mftheta.set_fem(gf.Fem("FEM_PK(1,1)"))  # Linear elements for rotation
 
 mim = gf.MeshIm(Mesh, gf.Integ("IM_GAUSS1D(99)"))  # Integration method
 
