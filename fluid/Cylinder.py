@@ -216,9 +216,14 @@ md.add_linear_term(mim_fluid, 'dt*Stress_p(p):Grad_Test_v_f', FLUID)
 # Inlet velocity profile (parabolic, time-dependent with smooth ramp)
 
 # DIRICHLET CONDITIONS
-md.add_Dirichlet_condition_with_multipliers(mfv_fluid, WALLS, "v_f", [U_mean, 0], FLUID)  
-md.add_Dirichlet_condition_with_multipliers(mfv_fluid, INLET, "v_f", [U_mean, 0], FLUID)  
-md.add_Dirichlet_condition_with_multipliers(mfv_fluid, CYLINDER_INTERFACE, "v_f", [0, 0], FLUID)  
+ramp_factor = 0.0
+V_inlet_expr = f"{ramp_factor}*[U_mean, 0]"
+V_inlet = md.interpolation(V_inlet_expr, mfv_fluid)
+
+md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet) 
+md.add_Dirichlet_condition_with_multipliers(mim_fluid,"v_f", mfv_fluid, WALLS, 'V_inlet')  
+md.add_Dirichlet_condition_with_multipliers(mim_fluid,"v_f", mfv_fluid, INLET, "V_inlet")  
+md.add_Dirichlet_condition_with_multipliers(mim_fluid,"v_f", mfv_fluid, CYLINDER_INTERFACE)  
 
 
 ####################
@@ -248,16 +253,14 @@ while t < T:
         ramp_factor = 0.5 * (1 - np.cos(np.pi * t / 2.0))
     else:
         ramp_factor = 1.0
-    V_inlet_expr = f"{ramp_factor}*[inlet_profile(X(2)), 0]"
-    V_inlet_full = md.interpolation(V_inlet_expr, mfv_fluid_)
-    V_inlet = V_inlet_full[kept_dofs_v_f]
+    V_inlet_expr = f"{ramp_factor}*[U_mean, 0]"
+    V_inlet = md.interpolation(V_inlet_expr, mfv_fluid)
     md.set_variable("V_inlet", V_inlet)
 
     if step > 0:  # After first solve
         print(f'time is: {t} and ramp_factor is {ramp_factor} and velocity is {V_inlet}')
     
 
-    check_mesh_quality(Mesh_fluid, U_mean, 0.07071078, ν_fluid, dt)
     # More robust solver parameters
     md.solve("noisy", 
          "max_iter", 100,
