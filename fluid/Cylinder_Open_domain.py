@@ -5,7 +5,6 @@ from Functions import verify_regions, mesh_statistics_corrected
 
 
 
-
 ############################{####
 # Cylinder in a Fluid:
 #################################
@@ -25,19 +24,24 @@ scale_factor = 1 #m -> m  (it can be used if we want to pass from meter to anyth
 
 # Fluid properties (air):
 #ν_fluid = 1.516e-5 * scale_factor**2                # m²/s 
-ν_fluid = 1.16667e-3 * scale_factor**2  
+ν_fluid = 0.0035 * scale_factor**2  
 rho_fluid = 1.204 /(scale_factor**3  )               # kg/m³ 
 
 
 
 # Boundaries values: 
 # Inlet velocity parameters
-U_mean = 0.1       # Mean inlet velocity m/s
-H = 0.2          # Channel height m
+U_mean = 1      # Mean inlet velocity m/s
+
+# Reference values for coefficients
+D = 1  # Cylinder diameter (you need to set this based on your mesh)
+A_ref = D   # Reference area (diameter × unit depth for 2D)
+q_inf = 0.5 * rho_fluid * U_mean**2  # Dynamic pressure
+
 
 # Transient paramters: 
-T = 10.0           # Total simulation time
-dt = 1e-3         # Time step
+T = 2.0           # Total simulation time
+dt = 1e-3        # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 
@@ -47,9 +51,9 @@ print(f"Reynolds number is: {U_mean*0.7/ν_fluid}")
 ## MESH ##
 #############
 
-Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/cylinder.msh')
-Mesh_fluid.export_to_vtk('fluid/Fluid.vtk') 
-mesh_statistics_corrected(Mesh_fluid,name="Mesh")
+Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder.msh')
+#Mesh_fluid.export_to_vtk('fluid/Mesh/Cylinder_open_domain.vtk') 
+#mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
 #############
 ## REGIONS ##
@@ -98,7 +102,7 @@ Mesh_fluid.region_merge(WALLS,Bottom_right)
 Mesh_fluid.region_merge(WALLS,Top_left)
 Mesh_fluid.region_merge(WALLS,Top_right)
 
-#verify_regions(Mesh_fluid, 'fluid/meshfluid')
+#verify_regions(Mesh_fluid, 'fluid/Mesh/meshfluid_cylinder_open_domain')
 
 ########################
 ## INTEGRATION METHOD ##
@@ -106,7 +110,7 @@ Mesh_fluid.region_merge(WALLS,Top_right)
 """
 The integration method is quadrature with 7 points, which is suitable for QK elements.  
 """
-mim_fluid = gf.MeshIm(Mesh_fluid, gf.Integ('IM_QUAD(7)'))
+mim_fluid = gf.MeshIm(Mesh_fluid, gf.Integ('IM_QUAD(5)'))
 
 
 #########################
@@ -118,19 +122,12 @@ THe meshes are quadrilater, hence QK elements are used.
 
 ## FEM ELEMENTS:
 
-mfv_fluid_ = gf.MeshFem(Mesh_fluid, 2)
-mfv_fluid_.set_fem(gf.Fem('FEM_QK(2,2)'))
+mfv_fluid = gf.MeshFem(Mesh_fluid, 2)
+mfv_fluid.set_fem(gf.Fem('FEM_QK(2,2)'))
 
 mfp_fluid = gf.MeshFem(Mesh_fluid, 1)
 mfp_fluid.set_fem(gf.Fem('FEM_QK(2,1)'))
 
-kept_dofs_v_f = list(
-                set(range(mfv_fluid_.nbdof()))
-                -set(mfv_fluid_.basic_dof_on_region(CYLINDER_INTERFACE))
-                )
-                
-
-mfv_fluid = gf.MeshFem('partial', mfv_fluid_, kept_dofs_v_f)
 
 
 
@@ -150,8 +147,8 @@ Fem variable are defined on the MeshFEM with removed degree of freedom.
 """
 
 
-md.add_fem_variable("v_f", mfv_fluid)       # Fluid velocity  
-md.add_fem_variable("p", mfp_fluid)       # Pressure
+md.add_fem_variable("v_f", mfv_fluid)        # Fluid velocity  
+md.add_fem_variable("p", mfp_fluid)          # Pressure
 
 # Previous time step data
 md.add_fem_data("Previous_v_f", mfv_fluid)
@@ -167,9 +164,9 @@ md.add_initialized_data("rho_f", rho_fluid)
 md.add_initialized_data("nu_f", ν_fluid)
 md.add_initialized_data("dt", dt)
 md.add_initialized_data("theta", theta)
-md.add_initialized_data("H", H)
 md.add_initialized_data("U_mean", U_mean)
 md.add_initialized_data("p_out", 0)
+
 # Time variable
 md.add_initialized_data("t", 0.0)
 # Define inlet profile as a macro (parabolic profile)
@@ -206,46 +203,51 @@ md.add_macro("Convection(v)", "(rho_f*v.Grad_v)")
 md.add_macro('Incompressibility(v)', "Trace(Grad_v)")
 
 
-Transient_fluid = 'rho_f*(v_f - Previous_v_f). Test_v_f' 
+Transient_fluid = '(rho_f/dt)*(v_f - Previous_v_f). Test_v_f' 
             
 md.add_nonlinear_term(mim_fluid, Transient_fluid, FLUID)
 
 
 md.add_linear_term(mim_fluid, ' Incompressibility(v_f)*Test_p', FLUID) 
 
-md.add_nonlinear_term(mim_fluid,"dt*theta*(Convection(v_f)).Test_v_f +" \
- "dt*(1-theta)*(Convection(Previous_v_f)).Test_v_f", FLUID)
+md.add_nonlinear_term(mim_fluid,"theta*(Convection(v_f)).Test_v_f +" \
+ "(1-theta)*(Convection(Previous_v_f)).Test_v_f", FLUID)
 
-md.add_linear_term(mim_fluid,"dt*theta*Stress_vu(v_f):Grad_Test_v_f +" \
-                                "dt*(1-theta)*(Stress_vu(Previous_v_f):Grad_Test_v_f)", FLUID)
-md.add_linear_term(mim_fluid, 'dt*Stress_p(p):Grad_Test_v_f', FLUID)
+md.add_linear_term(mim_fluid,"theta*Stress_vu(v_f):Grad_Test_v_f +" \
+                                "(1-theta)*(Stress_vu(Previous_v_f):Grad_Test_v_f)", FLUID)
+md.add_linear_term(mim_fluid, 'Stress_p(p):Grad_Test_v_f', FLUID)
 
 
 
 
 #####################
 # BOUNDARY CONDITIONS
+#####################
 
-# DIRICHLET CONDITIONS
 
-V_inlet_full = md.interpolation("[U_mean, 0]", mfv_fluid_)
-V_inlet = V_inlet_full[kept_dofs_v_f]
+V_inlet = md.interpolation("[U_mean, 0]", mfv_fluid)
 md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet) 
 
-V_walls = md.interpolation("[U_mean, 0]", mfv_fluid_)
-V_walls = V_inlet_full[kept_dofs_v_f]
-md.add_initialized_fem_data('V_walls', mfv_fluid, V_inlet) 
+V_walls = md.interpolation("[U_mean, 0]", mfv_fluid)
+md.add_initialized_fem_data('V_walls', mfv_fluid, V_walls) 
+
+V_cylinder = md.interpolation("[0, 0]", mfv_fluid)
+md.add_initialized_fem_data('V_cylinder', mfv_fluid, V_cylinder) 
+
 
 # Apply Dirichlet conditions with multipliers
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, INLET, "V_inlet")
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, WALLS, "V_inlet")
+md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDER_INTERFACE, "V_cylinder")
+
+
 
 ####################
 ## MODEL SOLOTION ##
 ####################
 
 # Create output directory
-output_dir = "fluid/Results_fluid"
+output_dir = "fluid/Results_fluid_test2"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
@@ -257,34 +259,67 @@ t = 0.0
 step = 0
 
 
+time_history = []
+cd_history = []
+cl_history = []
+
 
 # Main time loop
 while t < T:
     
-    md.set_variable("t", t)
+  md.set_variable("t", t)
     # More robust solver parameters
-    md.solve("noisy", 
+  md.solve("noisy", 
          "max_iter", 100,
-         "max_res", 1e-6,  
+         "max_res", 1e-7,  
          "lsolver", "superlu",  
          "alpha min", 1e-4,  
          "alpha mult", 0.5)    
 
     # Extract current solution
 
-    v_f = md.variable("v_f")
-    p = md.variable("p")
-    print(f'time is: {t} the velocity is {v_f}')
+  v_f = md.variable("v_f")
+  p = md.variable("p")
+  print(f'time is: {t} the velocity is {v_f}')
 
-    
+  if step % 25 == 0:
     mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{step:05d}.vtu",
-                            mfv_fluid, v_f, "Velocity", 
-                            mfp_fluid, p, "Pressure")
-    
-    
-    md.set_variable("Previous_v_f", v_f)
+                          mfv_fluid, v_f, "Velocity", 
+                          mfp_fluid, p, "Pressure")
 
-    # Advance time
-    t += dt
-    step += 1
-    
+
+  md.set_variable("Previous_v_f", v_f)
+
+  ###### CL and CD computation ######
+  traction = gf.asm_generic(mim_fluid, 0, "Stress_vu(v_f)*Normal+ Stress_p(p)*Normal", CYLINDER_INTERFACE, md)
+  Fx, Fy = -traction[0], -traction[1]
+  Cd = Fx / (q_inf * A_ref)
+  Cl = Fy / (q_inf * A_ref)
+  print(f"Time: {t:.4f}, Cd: {Cd:.6f}, Cl: {Cl:.6f}")
+
+  time_history.append(t)
+  cd_history.append(Cd)
+  cl_history.append(Fy)
+  np.savetxt(f"fluid/force_coefficients.txt", 
+        np.column_stack([time_history, cd_history, cl_history]),
+        header="Time, Cd, Cl")
+  
+  ## some checks to see if the solution is resonable ##
+  div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
+  print("‖div(v_f)‖ₗ₂ =", div_norm)
+
+  inlet_dofs = mfv_fluid.basic_dof_on_region(INLET)
+  if len(inlet_dofs) > 0:
+      v_inlet_actual = v_f[inlet_dofs]
+      v_inlet_prescribed = V_inlet[inlet_dofs]
+      error = np.linalg.norm(v_inlet_actual - v_inlet_prescribed)
+      rel_error = error / (np.linalg.norm(v_inlet_prescribed) + 1e-15)
+      print(f"  Inlet velocity relative error: {rel_error:.6e}")
+      if rel_error > 1e-3:
+          print("  ⚠️  WARNING: Inlet velocity deviates significantly from prescribed value!")
+
+
+  # Advance time
+  t += dt
+  step += 1
+  
