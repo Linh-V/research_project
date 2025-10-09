@@ -24,7 +24,7 @@ scale_factor = 1 #m -> m  (it can be used if we want to pass from meter to anyth
 
 # Fluid properties (air):
 #ν_fluid = 1.516e-5 * scale_factor**2                # m²/s 
-ν_fluid = 0.0035 * scale_factor**2  
+ν_fluid = 1/60 * scale_factor**2  
 rho_fluid = 1.204 /(scale_factor**3  )               # kg/m³ 
 
 
@@ -45,7 +45,7 @@ dt = 1e-3        # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 
-print(f"Reynolds number is: {U_mean*0.7/ν_fluid}")
+print(f"Reynolds number is: {U_mean*D/ν_fluid}")
 
 ############
 ## MESH ##
