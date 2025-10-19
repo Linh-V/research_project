@@ -174,7 +174,8 @@ if __name__ == "__main__":
     Mesh.region_merge(WALLS,Top_left)
     Mesh.region_merge(WALLS,Top_right)
 
-
+    
+    
 
     ##################
     ## PROBLEM DATA ##
@@ -194,9 +195,13 @@ if __name__ == "__main__":
     # Inlet velocity parameters
     U_max = 1.5  # Maximum inlet velocity (m/s)
 
-    # Time parameters
+    # Time parameters:
+
+
+    h = min(Mesh.convex_radius())
+    print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
     T = 1.0      # Total simulation time (s) - reduced for testing
-    dt = 1/1600  # Time step
+    dt = 1/6600  # Time step
     num_steps = int(T / dt)
 
     print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / mu}")
@@ -237,7 +242,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "fluid/results_dfg"
+    output_dir = "fluid/results_dfg2"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -299,11 +304,11 @@ if __name__ == "__main__":
             '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
-        md1.add_linear_term(mim, '0.5*mu*(Grad_u):Grad_Test_u', FLUID) # segno corretto? 
-        md1.add_linear_term(mim, '0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) # segno corretto? 
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) # segno corretto? 
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) # segno corretto? 
 
         # Pressure from previous step
-        md1.add_linear_term(mim, '-p_n*Trace(Grad_Test_u)', FLUID)
+        md1.add_linear_term(mim, '- p_n*Trace(Grad_Test_u)', FLUID)
         
         # Boundary conditions
         # Inlet velocity profile with ramp-up
@@ -394,18 +399,7 @@ if __name__ == "__main__":
         md3.add_initialized_data("H", H)
        
         md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
-        md3.add_linear_term(mim, '-rho*u_star.Test_u_new -dt*Grad_phi.Test_u_new', FLUID)
-
-        V_inlet= md3.interpolation(V_inlet_expr, mf_v)
-        md3.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
-        
-        V_noslip = md3.interpolation( "[0,0]" , mf_v)
-        md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
-
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", 1, INLET, "V_inlet")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", 1, WALLS, "V_noslip")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", 1, OBSTACLE, "V_noslip")
-
+        md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
 
         md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_new = md3.variable("u_new")
@@ -461,8 +455,9 @@ if __name__ == "__main__":
         # Export results
         #################################
         
-        #if step % 25 == 0: # export every 25 steps thus every 0.015625s, and there will be 64 files in total 
-        mf_v.export_to_vtu(f"{output_dir}/velocity_{step:05d}.vtu",
+        if step % 25 == 0: # export every 25 steps thus every 0.003788s, and there will be 64 files in total 
+            time = step * dt
+            mf_v.export_to_vtu(f"{output_dir}/velocity_{time}.vtu",
                             mf_v, u_new, "Velocity",
                             mf_p, p_new, "Pressure")
           
@@ -517,3 +512,9 @@ try:
     
 except ImportError:
     print("Matplotlib not available for plotting")
+
+
+
+# Check if the elements are correct, in particular for md2.
+# Check equation md3, maybe is possible to do it without fem
+# Do it with the open channel. 

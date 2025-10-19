@@ -26,7 +26,7 @@ scale_factor = 1 #m -> m  (it can be used if we want to pass from meter to anyth
 #ν_fluid = 1.516e-5 * scale_factor**2                # m²/s 
 ν_fluid = 1/60 * scale_factor**2  
 rho_fluid = 1.204 /(scale_factor**3  )               # kg/m³ 
-
+mu_fluid = rho_fluid * ν_fluid          # Dynamic viscosity kg/(m·s)
 
 
 # Boundaries values: 
@@ -40,18 +40,21 @@ q_inf = 0.5 * rho_fluid * U_mean**2  # Dynamic pressure
 
 
 # Transient paramters: 
-T = 2.0           # Total simulation time
-dt = 1e-3        # Time step
+T = 5.0           # Total simulation time
+dt = 0.002       # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 
-print(f"Reynolds number is: {U_mean*D/ν_fluid}")
-
+print(f"Reynolds number is: {U_mean*D/ν_fluid} and number of time steps: {int(T/dt)}")
+print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_mean}")
 ############
 ## MESH ##
 #############
 
 Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder.msh')
+h = min(Mesh_fluid.convex_radius())
+print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt = {dt} should be less than {1*h/U_mean}" )
+
 #Mesh_fluid.export_to_vtk('fluid/Mesh/Cylinder_open_domain.vtk') 
 #mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
@@ -247,7 +250,7 @@ md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDE
 ####################
 
 # Create output directory
-output_dir = "fluid/Results_fluid_test2"
+output_dir = "Results_fluid_sunday_test"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
@@ -268,10 +271,9 @@ cl_history = []
 while t < T:
     
   md.set_variable("t", t)
-    # More robust solver parameters
   md.solve("noisy", 
          "max_iter", 100,
-         "max_res", 1e-7,  
+         "max_res", 1e-8,  
          "lsolver", "superlu",  
          "alpha min", 1e-4,  
          "alpha mult", 0.5)    
@@ -281,11 +283,12 @@ while t < T:
   v_f = md.variable("v_f")
   p = md.variable("p")
   print(f'time is: {t} the velocity is {v_f}')
-
-  if step % 25 == 0:
-    mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{step:05d}.vtu",
+  if step % 10 == 0:
+    time_ms = int(t * 1000)  # Convert to milliseconds
+    mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{time_ms:06d}.vtu",
                           mfv_fluid, v_f, "Velocity", 
                           mfp_fluid, p, "Pressure")
+    
 
 
   md.set_variable("Previous_v_f", v_f)
@@ -300,7 +303,7 @@ while t < T:
   time_history.append(t)
   cd_history.append(Cd)
   cl_history.append(Fy)
-  np.savetxt(f"fluid/force_coefficients.txt", 
+  np.savetxt(f"fluid/force_coefficientsre200_test0_001.txt", 
         np.column_stack([time_history, cd_history, cl_history]),
         header="Time, Cd, Cl")
   
@@ -323,3 +326,4 @@ while t < T:
   t += dt
   step += 1
   
+print("simulation completed.")
