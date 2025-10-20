@@ -1,5 +1,8 @@
 // Cylinder Mesh
 
+//gmsh fluid/Mesh/cylinder_tri.geo -2 -format msh2 -o fluid/Mesh/cylinder_tri.msh
+// gmsh fluid/Mesh/cylinder_tri.geo -2 -format msh4 -o fluid/Mesh/cylinder_tri_4p1.msh
+
 Nx1 = 31; Rx1 = 1.00;
 Nx2 = 37; Rx2 = 1.035;
 Ny = 61; Ry = 2.50;
@@ -110,4 +113,4 @@ Physical Curve("Outlet", 1002) = {7};
 Physical Curve("Wall", 1003) = {4, 3, 1, 2};
 //+
 
-Save "cylinder_tri.msh";
+

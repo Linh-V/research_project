@@ -110,8 +110,8 @@ theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 #############
 
 Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/cylinder.msh')
-Mesh_fluid.export_to_vtk('fluid/Fluid.vtk') 
-mesh_statistics_corrected(Mesh_fluid,name="Mesh")
+# Mesh_fluid.export_to_vtk('fluid/Fluid.vtk') 
+# mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
 #############
 ## REGIONS ##
@@ -347,7 +347,7 @@ while t < T:
     md.solve("noisy", 
          "max_iter", 100,
          "max_res", 1e-6,  
-         "lsolver", "superlu",  
+         "lsolver", "mumps",  
          "alpha min", 1e-4,  
          "alpha mult", 0.5)    
 
