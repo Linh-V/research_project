@@ -434,8 +434,8 @@ if __name__ == "__main__":
         #################################
         
         #if step % 25 == 0: # export every 25 steps thus every 0.003788s, and there will be 64 files in total 
-        time = int(step * dt)
-        mf_v.export_to_vtu(f"{output_dir}/velocity_{time:06d}.vtu",
+        
+        mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
                         mf_v, u_new, "Velocity",
                         mf_p, p_new, "Pressure")
         
