@@ -125,7 +125,7 @@ if __name__ == "__main__":
     ## MESH imported ##
     ###################
 
-    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel.msh')
+    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
 
     #############
     ## REGIONS ##
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     h = min(Mesh.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
     T = 1.0      # Total simulation time (s) - reduced for testing
-    dt = 1/6600  # Time step
+    dt = 0.0001  # Time step
     num_steps = int(T / dt)
 
     print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / mu}")
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh, gf.Integ('IM_QUAD(5)'))
+    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(5)'))
 
     #########################
     ## FEM ELEMENTS ##
@@ -219,11 +219,11 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
-    mf_v.set_fem(gf.Fem('FEM_QK(2,2)'))
+    mf_v.set_fem(gf.Fem('FEM_PK(2,2)'))
 
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
-    mf_p.set_fem(gf.Fem('FEM_QK(2,1)'))
+    mf_p.set_fem(gf.Fem('FEM_PK(2,1)'))
 
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")
@@ -242,7 +242,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "fluid/results_dfg2"
+    output_dir = "fluid/results_cylinder_channel_getfem_tri"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -368,7 +368,7 @@ if __name__ == "__main__":
         
         # Poisson equation
         md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
-        md2.add_linear_term(mim, '-(rho/dt)*Trace(Grad_u_star)*Test_phi', FLUID)
+        md2.add_linear_term(mim, '(rho/dt)*Trace(Grad_u_star)*Test_phi', FLUID)
         
         # BC: φ = 0 at outlet
         md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
@@ -415,52 +415,52 @@ if __name__ == "__main__":
         # Compute drag and lift
         #################################
         
-        if step % 50 == 0:
-            md_force = gf.Model("real")
-            md_force.add_fem_data("p_new", mf_p)
-            md_force.set_variable("p_new", p_new)
-            md_force.add_fem_data("u_new", mf_v)
-            md_force.set_variable("u_new", u_new)
-            md_force.add_initialized_data("mu", mu)
-            # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
-            traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
-            
-            Fx = -traction[0]
-            Fy = -traction[1]
-            
-            # Drag and lift coefficients
-            D = 2 * r  # Diameter
-            U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
-            
-            Cd = 2 * Fx / (rho * U_mean**2 * D)
-            Cl = 2 * Fy / (rho * U_mean**2 * D)
-            
-            # Pressure difference
-            try:
-                p_front = gf.compute_interpolate_on(mf_p, p_new, p_front_point)[0]
-                p_back = gf.compute_interpolate_on(mf_p, p_new, p_back_point)[0]
-                p_diff = p_front - p_back
-            except:
-                p_diff = 0.0
-            
-            time_history.append(t)
-            cd_history.append(Cd)
-            cl_history.append(Cl)
-            p_diff_history.append(p_diff)
-            
-            print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
-            
+        
+        md_force = gf.Model("real")
+        md_force.add_fem_data("p_new", mf_p)
+        md_force.set_variable("p_new", p_new)
+        md_force.add_fem_data("u_new", mf_v)
+        md_force.set_variable("u_new", u_new)
+        md_force.add_initialized_data("mu", mu)
+        # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
+        traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
+        
+        Fx = -traction[0]
+        Fy = -traction[1]
+        
+        # Drag and lift coefficients
+        D = 2 * r  # Diameter
+        U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
+        
+        Cd = 2 * Fx / (rho * U_mean**2 * D)
+        Cl = 2 * Fy / (rho * U_mean**2 * D)
+        
+        # Pressure difference
+        try:
+            p_front = gf.compute_interpolate_on(mf_p, p_new, p_front_point)[0]
+            p_back = gf.compute_interpolate_on(mf_p, p_new, p_back_point)[0]
+            p_diff = p_front - p_back
+        except:
+            p_diff = 0.0
+        
+        time_history.append(t)
+        cd_history.append(Cd)
+        cl_history.append(Cl)
+        p_diff_history.append(p_diff)
+        
+        print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
+        
 
         #################################
         # Export results
         #################################
         
-        if step % 25 == 0: # export every 25 steps thus every 0.003788s, and there will be 64 files in total 
-            time = step * dt
-            mf_v.export_to_vtu(f"{output_dir}/velocity_{time}.vtu",
-                            mf_v, u_new, "Velocity",
-                            mf_p, p_new, "Pressure")
-          
+        #if step % 25 == 0: # export every 25 steps thus every 0.003788s, and there will be 64 files in total 
+        time = int(step * dt)
+        mf_v.export_to_vtu(f"{output_dir}/velocity_{time:06d}.vtu",
+                        mf_v, u_new, "Velocity",
+                        mf_p, p_new, "Pressure")
+        
         #################################
         # Update for next time step
         #################################
@@ -469,19 +469,18 @@ if __name__ == "__main__":
         u_n = u_new.copy()
         p_n = p_new.copy()
 
-    print("\nTime integration completed!")
 
-    #################################
-    # Save force coefficients
-    #################################
+        #################################
+        # Save force coefficients
+        #################################
 
-    np.savetxt(f"{output_dir}/force_coefficients.txt",
-            np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
-            header="Time Cd Cl Pressure_Diff",
-            fmt='%.8e')
+        np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
+                np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
+                header="Time Cd Cl Pressure_Diff",
+                fmt='%.8e')
 
-    print(f"Results saved to {output_dir}/")
-    print(f"Final time: {t:.4f}")
+        print(f"Results saved to {output_dir}/")
+        print(f"Final time: {t:.4f}")
 
     #################################
     # Plot results (optional)
@@ -515,6 +514,3 @@ except ImportError:
 
 
 
-# Check if the elements are correct, in particular for md2.
-# Check equation md3, maybe is possible to do it without fem
-# Do it with the open channel. 
