@@ -105,16 +105,16 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
 
 # Generate the mesh
 if __name__ == "__main__":
-    # create_dfg_mesh("dfg_benchmark.msh", visualize=False)
+    #create_dfg_mesh("dfg_benchmark.msh", visualize=True)
 
     # ############
     # ## MESH creation##
     # ############
 
     # # Load mesh
-    # mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
-    # Mesh = gf.Mesh('import', 'gmsh', mesh_file)
-    # Mesh.export_to_vtk('mesh_dfg.vtk')
+    #mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
+    #Mesh = gf.Mesh('import', 'gmsh', mesh_file)
+    # # Mesh.export_to_vtk('mesh_dfg.vtk')
 
     # # Print mesh info
     # print(f"Mesh dimension: {Mesh.dim()}")
@@ -331,28 +331,6 @@ if __name__ == "__main__":
         # Solve
         md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_star = md1.variable("u")
-
-        if len(inlet_dofs) > 0:
-            u_inlet_actual = u_star[inlet_dofs]
-            u_inlet_prescribed = V_inlet[inlet_dofs]
-            u_cylinder_actual = u_star[mf_v.basic_dof_on_region(OBSTACLE)]
-            u_walls_actual = u_star[mf_v.basic_dof_on_region(WALLS)]
-            # Compute difference
-            error = np.linalg.norm(u_inlet_actual - u_inlet_prescribed)
-            rel_error = error / (np.linalg.norm(u_inlet_prescribed) + 1e-15)
-            print("u inlet",u_inlet_actual)
-            print("u inlet prescribed",u_inlet_prescribed)
-
-            print(f"\n  Inlet BC verification:")
-            print(f"    Prescribed max: {np.max(np.abs(u_inlet_prescribed)):.6f}")
-            print(f"    Actual max:     {np.max(np.abs(u_inlet_actual)):.6f}")
-            print(f"    Absolute error: {error:.6e}")
-            print(f"    Relative error: {rel_error:.6e}")
-            
-            if rel_error > 1e-6:
-                print("    ⚠️  WARNING: Inlet BC not well satisfied!")
-            else:
-                print("    ✅ Inlet BC correctly applied")
 
         #################################
         # STEP 2: Pressure correction

@@ -11,7 +11,7 @@ from Functions import verify_regions
 # Generate the Mesh_fluid
 if __name__ == "__main__":
 
-
+    output_dir = f"fluid/results_cylinder_open_domain2_TRI"
     ##################
     ## PROBLEM DATA ##
     ##################
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # Transient paramters: 
     T = 5.0           # Total simulation time
-    dt = 1e-4      # Time step
+    dt = 1e-3      # Time step
     theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
     num_steps = int(T / dt)
     Re = U_mean * D / ν_fluid
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     ## Mesh_fluid ##
     #############
 
-    Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder.msh')
+    Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_tri_4p1.msh')
     #Mesh_fluid.export_to_vtk('fluid/Mesh_fluid/Cylinder_open_domain.vtk') 
     h = min(Mesh_fluid.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt = {dt} should be less than {1*h/U_mean}" )
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh_fluid, gf.Integ('IM_QUAD(5)'))
+    mim = gf.MeshIm(Mesh_fluid, gf.Integ('IM_TRIANGLE(5)'))
 
     #########################
     ## FEM ELEMENTS ##
@@ -114,11 +114,11 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh_fluid, 2)
-    mf_v.set_fem(gf.Fem('FEM_QK(2,2)'))
+    mf_v.set_fem(gf.Fem('FEM_PK(2,2)'))
 
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh_fluid, 1)
-    mf_p.set_fem(gf.Fem('FEM_QK(2,1)'))
+    mf_p.set_fem(gf.Fem('FEM_PK(2,1)'))
 
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = f"fluid/results_cylinder_open_domain2_re{Re}"
+    
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -198,8 +198,8 @@ if __name__ == "__main__":
             '0.5*rho_fluid*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u_star', FLUID)
         
         # Crank-Nicolson diffusion: - 0.5*(mu_fluid*∇²(u+u_n)) => + 0.5(mu_fluid*∇(u+u_n):∇(u_test)) -int(mu_fluid*∇(u+u_n)*n)u_test on outflow
-        md1.add_linear_term(mim, '0.5*mu_fluid*(Grad_u_star):Grad_Test_u_star', FLUID) # segno corretto? 
-        md1.add_linear_term(mim, '0.5*mu_fluid*(Grad_u_n):Grad_Test_u_star', FLUID) # segno corretto? 
+        md1.add_linear_term(mim, '0.5*mu_fluid*(Grad_u_star):Grad_Test_u_star', FLUID)  
+        md1.add_linear_term(mim, '0.5*mu_fluid*(Grad_u_n):Grad_Test_u_star', FLUID) 
 
         # Pressure from previous step
         md1.add_linear_term(mim, ' - p_n*Trace(Grad_Test_u_star)', FLUID)
@@ -209,12 +209,12 @@ if __name__ == "__main__":
 
         inlet_dofs = mf_v.basic_dof_on_region(INLET)
 
-        t_ramp = 50 * dt  # = 0.001 s
-        if t < t_ramp:
-            ramp_factor = np.sin(0.5 * np.pi * t / t_ramp)
-        else:
-            ramp_factor = 1.0 
-
+        # t_ramp = 50 * dt  # = 0.001 s
+        # if t < t_ramp:
+        #     ramp_factor = np.sin(0.5 * np.pi * t / t_ramp)
+        # else:
+        #     ramp_factor = 1.0 
+        ramp_factor = 1.0
         V_inlet_expr = f"{ramp_factor}*[U_mean, 0]"
         V_inlet= md1.interpolation(V_inlet_expr, mf_v) # Interpolation over the all domain. 
         md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
@@ -254,8 +254,6 @@ if __name__ == "__main__":
         md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")   
         phi = md2.variable("phi")
         # Update pressure: p^{n+1} = p^n + φ
-        p_new = p_n + phi
-        p_n = p_new.copy()
 
         
         #################################
@@ -313,6 +311,7 @@ if __name__ == "__main__":
         md_force.add_fem_data("u_new", mf_v)
         md_force.set_variable("u_new", u_new)
         md_force.add_initialized_data("mu_fluid", mu_fluid)
+        
         # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
         traction = gf.asm_generic(mim, 0, "(mu_fluid*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",CYLINDER_INTERFACE, md_force)
         
@@ -323,20 +322,11 @@ if __name__ == "__main__":
         Cd = 2 * Fx / (rho_fluid * U_mean**2 * D)
         Cl = 2 * Fy / (rho_fluid * U_mean**2 * D)
         
-        # Pressure difference
-        try:
-            p_front = gf.compute_interpolate_on(mf_p, p_new, p_front_point)[0]
-            p_back = gf.compute_interpolate_on(mf_p, p_new, p_back_point)[0]
-            p_diff = p_front - p_back
-        except:
-            p_diff = 0.0
-        
         time_history.append(t)
         cd_history.append(Cd)
         cl_history.append(Cl)
-        p_diff_history.append(p_diff)
         
-        print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
+        print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}")
             
 
         #################################
@@ -355,18 +345,19 @@ if __name__ == "__main__":
         
         u_n1 = u_n.copy()
         u_n = u_new.copy()
-    print("\nTime integration completed!")
+        p_new = p_n + phi
+        p_n = p_new.copy()
 
-    #################################
-    # Save force coefficients
-    #################################
+        #################################
+        # Save force coefficients
+        #################################
 
-    np.savetxt(f"fluid/force_coefficients_open_channel_2{Re}.txt",
-            np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
-            header="Time Cd Cl Pressure_Diff",
-            fmt='%.8e')
+        np.savetxt(f"fluid/force_coefficients_open_triangle.txt",
+                np.column_stack([time_history, cd_history, cl_history, div_norm]),
+                header="Time Cd Cl",
+                fmt='%.8e')
 
-    print(f"Results saved to {output_dir}/")
+        print(f"Results saved to {output_dir}/")
     print(f"Final time: {t:.4f}")
 
 
