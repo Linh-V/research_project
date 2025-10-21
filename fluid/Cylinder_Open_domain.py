@@ -1,7 +1,6 @@
 import getfem as gf 
 import numpy as np
 import os
-from Functions import verify_regions, mesh_statistics_corrected
 
 
 
@@ -15,17 +14,10 @@ The goal is to solve the full Navier-Stokes equations for a cylinder immeresed i
 ##################
 ## PROBLEM DATA ##
 ##################
-"""
-The fluid will be the air
-"""
 
-scale_factor = 1 #m -> m  (it can be used if we want to pass from meter to anything else cm, dm etc...) 
-
-
-# Fluid properties (air):
-#ν_fluid = 1.516e-5 * scale_factor**2                # m²/s 
-ν_fluid = 1/60 * scale_factor**2  
-rho_fluid = 1.204 /(scale_factor**3  )               # kg/m³ 
+# Fluid properties (artificial values for a Reynolds number of 60 ):
+ν_fluid = 1/60 
+rho_fluid = 1.204               # kg/m³ 
 mu_fluid = rho_fluid * ν_fluid          # Dynamic viscosity kg/(m·s)
 
 
@@ -47,6 +39,7 @@ theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 print(f"Reynolds number is: {U_mean*D/ν_fluid} and number of time steps: {int(T/dt)}")
 print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_mean}")
+
 ############
 ## MESH ##
 #############
@@ -54,9 +47,6 @@ print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_
 Mesh_fluid= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder.msh')
 h = min(Mesh_fluid.convex_radius())
 print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt = {dt} should be less than {1*h/U_mean}" )
-
-#Mesh_fluid.export_to_vtk('fluid/Mesh/Cylinder_open_domain.vtk') 
-#mesh_statistics_corrected(Mesh_fluid,name="Mesh")
 
 #############
 ## REGIONS ##
@@ -105,13 +95,11 @@ Mesh_fluid.region_merge(WALLS,Bottom_right)
 Mesh_fluid.region_merge(WALLS,Top_left)
 Mesh_fluid.region_merge(WALLS,Top_right)
 
-#verify_regions(Mesh_fluid, 'fluid/Mesh/meshfluid_cylinder_open_domain')
-
 ########################
 ## INTEGRATION METHOD ##
 ########################
 """
-The integration method is quadrature with 7 points, which is suitable for QK elements.  
+The integration method is quadrature with 5 points, which is suitable for QK elements.  
 """
 mim_fluid = gf.MeshIm(Mesh_fluid, gf.Integ('IM_QUAD(5)'))
 
@@ -168,7 +156,6 @@ md.add_initialized_data("nu_f", ν_fluid)
 md.add_initialized_data("dt", dt)
 md.add_initialized_data("theta", theta)
 md.add_initialized_data("U_mean", U_mean)
-md.add_initialized_data("p_out", 0)
 
 # Time variable
 md.add_initialized_data("t", 0.0)
@@ -194,7 +181,7 @@ md.set_variable("Previous_v_f", np.zeros(mfv_fluid.nbdof()))
 ## WEAK FORMULATION ##
 # ######################
 """
-The problem is formulated in weak form, and for the time the theta method is used.
+The problem is formulated in weak form and for the time the theta method is used.
 """
 
 
@@ -204,6 +191,7 @@ md.add_macro('Stress_vu(v)', "rho_f*nu_f*2*Sym(Grad_v) ")
 md.add_macro('Stress_p(p)', '-p*Id(2)')
 md.add_macro("Convection(v)", "(rho_f*v.Grad_v)")
 md.add_macro('Incompressibility(v)', "Trace(Grad_v)")
+################################################################## provare a fare la simulazione senza macro
 
 
 Transient_fluid = '(rho_f/dt)*(v_f - Previous_v_f). Test_v_f' 
@@ -219,8 +207,6 @@ md.add_nonlinear_term(mim_fluid,"theta*(Convection(v_f)).Test_v_f +" \
 md.add_linear_term(mim_fluid,"theta*Stress_vu(v_f):Grad_Test_v_f +" \
                                 "(1-theta)*(Stress_vu(Previous_v_f):Grad_Test_v_f)", FLUID)
 md.add_linear_term(mim_fluid, 'Stress_p(p):Grad_Test_v_f', FLUID)
-
-
 
 
 #####################
@@ -250,13 +236,12 @@ md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDE
 ####################
 
 # Create output directory
-output_dir = "Results_fluid_sunday_test"
+output_dir = "fluid/Results"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
 
 print(f"Time step: {dt}, Total time: {T}, number of steps: {int(T/dt)}")
-print(f"Theta: {theta} (Crank-Nicolson)" if theta == 0.5 else f"Theta: {theta}")
 
 t = 0.0
 step = 0
@@ -278,16 +263,17 @@ while t < T:
          "alpha min", 1e-4,  
          "alpha mult", 0.5)    
 
-    # Extract current solution
-
+  # Extract current solution
   v_f = md.variable("v_f")
   p = md.variable("p")
+
   print(f'time is: {t} the velocity is {v_f}')
-  if step % 10 == 0:
-    time_ms = int(t * 1000)  # Convert to milliseconds
-    mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{time_ms:06d}.vtu",
-                          mfv_fluid, v_f, "Velocity", 
-                          mfp_fluid, p, "Pressure")
+
+  
+  time_ms = int(t * 1000)  # Convert to milliseconds
+  mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{time_ms:06d}.vtu",
+                        mfv_fluid, v_f, "Velocity", 
+                        mfp_fluid, p, "Pressure")
     
 
 
@@ -303,24 +289,13 @@ while t < T:
   time_history.append(t)
   cd_history.append(Cd)
   cl_history.append(Fy)
-  np.savetxt(f"fluid/force_coefficientsre200_test0_001.txt", 
+  np.savetxt(f"fluid/force_coefficients.txt", 
         np.column_stack([time_history, cd_history, cl_history]),
         header="Time, Cd, Cl")
   
   ## some checks to see if the solution is resonable ##
   div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
   print("‖div(v_f)‖ₗ₂ =", div_norm)
-
-  inlet_dofs = mfv_fluid.basic_dof_on_region(INLET)
-  if len(inlet_dofs) > 0:
-      v_inlet_actual = v_f[inlet_dofs]
-      v_inlet_prescribed = V_inlet[inlet_dofs]
-      error = np.linalg.norm(v_inlet_actual - v_inlet_prescribed)
-      rel_error = error / (np.linalg.norm(v_inlet_prescribed) + 1e-15)
-      print(f"  Inlet velocity relative error: {rel_error:.6e}")
-      if rel_error > 1e-3:
-          print("  ⚠️  WARNING: Inlet velocity deviates significantly from prescribed value!")
-
 
   # Advance time
   t += dt
