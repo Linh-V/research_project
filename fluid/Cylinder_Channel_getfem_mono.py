@@ -33,7 +33,7 @@ U_max = 1.5      # Mean inlet velocity m/s
 # Reference values for coefficients
 D = 1  # Cylinder diameter (you need to set this based on your mesh)
 A_ref = D   # Reference area (diameter × unit depth for 2D)
-q_inf = 0.5 * rho_fluid * U_mean**2  # Dynamic pressure
+q_inf = 0.5 * rho_fluid * U_max**2  # Dynamic pressure
 
 
 # Transient paramters: 
@@ -42,8 +42,8 @@ dt = 1e-4       # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 
-print(f"Reynolds number is: {U_mean*D/ν_fluid} and number of time steps: {int(T/dt)}")
-print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_mean}")
+print(f"Reynolds number is: {U_max*D/ν_fluid} and number of time steps: {int(T/dt)}")
+print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_max}")
 
 ############
 ## MESH ##
@@ -51,7 +51,7 @@ print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_
 
 Mesh_fluid = gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
 h = min(Mesh_fluid.convex_radius())
-print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt = {dt} should be less than {1*h/U_mean}" )
+print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt = {dt} should be less than {1*h/U_max}" )
 
 #############
 ## REGIONS ##
@@ -119,10 +119,10 @@ THe meshes are quadrilater, hence QK elements are used.
 ## FEM ELEMENTS:
 
 mfv_fluid = gf.MeshFem(Mesh_fluid, 2)
-mfv_fluid.set_fem(gf.Fem('FEM_QK(2,2)'))
+mfv_fluid.set_fem(gf.Fem('FEM_PK(2,2)'))
 
 mfp_fluid = gf.MeshFem(Mesh_fluid, 1)
-mfp_fluid.set_fem(gf.Fem('FEM_QK(2,1)'))
+mfp_fluid.set_fem(gf.Fem('FEM_PK(2,1)'))
 
 
 
@@ -160,7 +160,7 @@ md.add_initialized_data("rho_f", rho_fluid)
 md.add_initialized_data("nu_f", ν_fluid)
 md.add_initialized_data("dt", dt)
 md.add_initialized_data("theta", theta)
-md.add_initialized_data("U_mean", U_mean)
+md.add_initialized_data("U_max", U_max)
 
 # Time variable
 md.add_initialized_data("t", 0.0)
@@ -219,20 +219,24 @@ md.add_linear_term(mim_fluid, 'Stress_p(p):Grad_Test_v_f', FLUID)
 #####################
 
 
-V_inlet = md.interpolation("[U_mean, 0]", mfv_fluid)
-md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet) 
+# Boundary conditions
+# Inlet velocity profile with ramp-up
 
-V_walls = md.interpolation("[U_mean, 0]", mfv_fluid)
-md.add_initialized_fem_data('V_walls', mfv_fluid, V_walls) 
+inlet_dofs = mf_v.basic_dof_on_region(INLET)
 
-V_cylinder = md.interpolation("[0, 0]", mfv_fluid)
-md.add_initialized_fem_data('V_cylinder', mfv_fluid, V_cylinder) 
+ramp_factor = 1.5*np.sin(np.pi * t / 8) 
+V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
+V_inlet= md1.interpolation(V_inlet_expr, mf_v)
+md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
+
+V_noslip = md1.interpolation( "[0,0]" , mf_v)
+md1.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
 
 
 # Apply Dirichlet conditions with multipliers
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, INLET, "V_inlet")
-md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, WALLS, "V_inlet")
-md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDER_INTERFACE, "V_cylinder")
+md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, WALLS, "V_noslip")
+md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDER_INTERFACE, "V_noslip")
 
 
 
