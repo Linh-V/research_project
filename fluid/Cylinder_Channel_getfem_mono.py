@@ -193,7 +193,6 @@ md.add_macro('Stress_vu(v)', "mu_f*2*Sym(Grad_v) ")
 md.add_macro('Stress_p(p)', '-p*Id(2)')
 md.add_macro("Convection(v)", "(rho_f*v.Grad_v)")
 md.add_macro('Incompressibility(v)', "Trace(Grad_v)")
-################################################################## provare a fare la simulazione senza macro
 
 
 Transient_fluid = '(rho_f/dt)*(v_f - Previous_v_f). Test_v_f' 
