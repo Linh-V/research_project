@@ -37,8 +37,8 @@ dt = 1e-4       # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
 
-print(f"Reynolds number is: {U_max*D/ν_fluid} and number of time steps: {int(T/dt)}")
-print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*D/U_max}")
+print(f"Reynolds number is: {U_max*2*r*rho_fluid/mu_fluid} and number of time steps: {int(T/dt)}")
+print(f"Strouhal number is approximately: {0.2}, thus a peiod is T = {1/0.2*(2*r)/U_max}")
 
 ############
 ## MESH ##
@@ -156,6 +156,8 @@ md.add_initialized_data("mu_f", mu_fluid)
 md.add_initialized_data("dt", dt)
 md.add_initialized_data("theta", theta)
 md.add_initialized_data("U_max", U_max)
+md.add_initialized_data("H", H)
+
 
 # Time variable
 md.add_initialized_data("t", 0.0)
@@ -212,32 +214,23 @@ md.add_linear_term(mim_fluid, 'Stress_p(p):Grad_Test_v_f', FLUID)
 #####################
 # BOUNDARY CONDITIONS
 #####################
+" Boundary conditions: there's a no slip condition on the walls and on the cylinder. a do nothing condition for the outlet. And the inlet is in the loop" 
 
 
-# Boundary conditions
-# Inlet velocity profile with ramp-up
+inlet_dofs = mfv_fluid.basic_dof_on_region(INLET)
 
-inlet_dofs = mf_v.basic_dof_on_region(INLET)
-
-ramp_factor = 1.5*np.sin(np.pi * t / 8) 
+ramp_factor = 0.0
 V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
-V_inlet= md1.interpolation(V_inlet_expr, mf_v)
-md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
-
-V_noslip = md1.interpolation( "[0,0]" , mf_v)
-md1.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
-
-
+V_inlet= md.interpolation(V_inlet_expr, mfv_fluid)
+md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet)
+V_noslip = md.interpolation( "[0,0]" , mfv_fluid)
+md.add_initialized_fem_data('V_noslip', mfv_fluid, V_noslip)
 # Apply Dirichlet conditions with multipliers
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, INLET, "V_inlet")
+
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, WALLS, "V_noslip")
 md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDER_INTERFACE, "V_noslip")
 
-
-
-####################
-## MODEL SOLOTION ##
-####################
 
 # Create output directory
 output_dir = "fluid/results_cylinder_channel_getfem_tri_monolitich"
@@ -247,23 +240,30 @@ os.makedirs(output_dir, exist_ok=True)
 
 print(f"Time step: {dt}, Total time: {T}, number of steps: {int(T/dt)}")
 
-t = 0.0
+
 step = 0
+t = 0
 
 
 time_history = []
 cd_history = []
 cl_history = []
-
+div_history = []
+p_diff_history = []
+ 
 
 # Main time loop
 while t < T:
-    
+  
+
+  ####################
+  ## MODEL SOLOTION ##
+  ####################
   md.set_variable("t", t)
   md.solve("noisy", 
          "max_iter", 100,
          "max_res", 1e-8,  
-         "lsolver", "superlu",  
+         "lsolver", "mumps",  
          "alpha min", 1e-4,  
          "alpha mult", 0.5)    
 
@@ -279,47 +279,61 @@ while t < T:
   #################################
 
   if step % 200 == 0: # export every 200 steps thus every  0.02s hence there are going to be 500 files
-      mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
-                      mf_v, u_new, "Velocity",
-                      mf_p, p_new, "Pressure")
-
+      mfv_fluid.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
+                      mfv_fluid, v_f, "Velocity",
+                      mfp_fluid, p, "Pressure")
 
 
   md.set_variable("Previous_v_f", v_f)
 
   ###### CL and CD computation ######
   traction = gf.asm_generic(mim_fluid, 0, "Stress_vu(v_f)*Normal+ Stress_p(p)*Normal", CYLINDER_INTERFACE, md)
+  Fx = -traction[0]
+  Fy = -traction[1]
   U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile     
-  Cd = 2 * Fx / (rho * U_mean**2 * D)
-  Cl = 2 * Fy / (rho * U_mean**2 * D)
+  Cd = 2 * Fx / (rho_fluid * U_mean**2 * (2*r))
+  Cl = 2 * Fy / (rho_fluid * U_mean**2 * (2*r))
 
   # Pressure difference
   try:
-      p_front = gf.compute_interpolate_on(mf_p, p_new, p_front_point)[0]
-      p_back = gf.compute_interpolate_on(mf_p, p_new, p_back_point)[0]
+      p_front = gf.compute_interpolate_on(mfp_fluid, p, p_front_point)[0]
+      p_back = gf.compute_interpolate_on(mfp_fluid, p, p_back_point)[0]
       p_diff = p_front - p_back
   except:
       p_diff = 0.0
   
   print(f"Time: {t:.4f}, Cd: {Cd:.6f}, Cl: {Cl:.6f}")
+  ## some checks to see if the solution is resonable ##
+  div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
+  print("‖div(v_f)‖ₗ₂ =", div_norm)
+
 
   time_history.append(t)
   cd_history.append(Cd)
   cl_history.append(Cl)
   p_diff_history.append(p_diff)
   div_history.append(div_norm)
+
   np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
                 np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
                 header="Time Cd Cl Pressure_Diff, div norm",
                 fmt='%.8e')
   
-  ## some checks to see if the solution is resonable ##
-  div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
-  print("‖div(v_f)‖ₗ₂ =", div_norm)
-
+  
   # Advance time
   t += dt
   step += 1
+  ###########################
+  # INLET BOUNDARY CONTION UPDATE#
+  ##########################
+  "The inlet dirichlet b.c has to be uptadated at each iteration; because there's a ramp facotr"
+  ramp_factor = 1.5*np.sin(np.pi * t / 8) 
+  V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
+  V_inlet= md.interpolation(V_inlet_expr, mfv_fluid)
+  md.set_variable('V_inlet', V_inlet)
+  md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, INLET, "V_inlet")
+
+  
   
 print("simulation completed.")
 
