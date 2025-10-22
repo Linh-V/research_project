@@ -200,7 +200,7 @@ if __name__ == "__main__":
 
     h = min(Mesh.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
-    T = 1.0      # Total simulation time (s) - reduced for testing
+    T = 10.0      # Total simulation time (s) - reduced for testing
     dt = 0.0001  # Time step
     num_steps = int(T / dt)
 
@@ -250,6 +250,7 @@ if __name__ == "__main__":
     cd_history = []
     cl_history = []
     p_diff_history = []
+    div_history = []
 
     # Points for pressure evaluation
     p_front_point = np.array([[0.15], [0.2]])
@@ -304,8 +305,8 @@ if __name__ == "__main__":
             '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
-        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) # segno corretto? 
-        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) # segno corretto? 
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) 
 
         # Pressure from previous step
         md1.add_linear_term(mim, '- p_n*Trace(Grad_Test_u)', FLUID)
@@ -329,7 +330,7 @@ if __name__ == "__main__":
         md1.add_Dirichlet_condition_with_multipliers(mim, "u", 1, OBSTACLE, "V_noslip")
         
         # Solve
-        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_star = md1.variable("u")
 
         #################################
@@ -351,7 +352,7 @@ if __name__ == "__main__":
         # BC: φ = 0 at outlet
         md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
         
-        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")   
+        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")   
         phi = md2.variable("phi")
         phi_norm = np.linalg.norm(phi)
         print(f"  ‖φ‖ = {phi_norm:.6e}")
@@ -379,7 +380,7 @@ if __name__ == "__main__":
         md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
         md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
 
-        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_new = md3.variable("u_new")
 
         # Update pressure: p^{n+1} = p^n + φ
@@ -425,6 +426,7 @@ if __name__ == "__main__":
         cd_history.append(Cd)
         cl_history.append(Cl)
         p_diff_history.append(p_diff)
+        div_history.append(div_norm)
         
         print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
         
@@ -433,12 +435,11 @@ if __name__ == "__main__":
         # Export results
         #################################
         
-        #if step % 25 == 0: # export every 25 steps thus every 0.003788s, and there will be 64 files in total 
-        
-        mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
-                        mf_v, u_new, "Velocity",
-                        mf_p, p_new, "Pressure")
-        
+        if step % 200 == 0: # export every 200 steps thus every  0.02s hence there are going to be 500 files
+            mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
+                            mf_v, u_new, "Velocity",
+                            mf_p, p_new, "Pressure")
+            
         #################################
         # Update for next time step
         #################################
@@ -453,8 +454,8 @@ if __name__ == "__main__":
         #################################
 
         np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
-                np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
-                header="Time Cd Cl Pressure_Diff",
+                np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
+                header="Time Cd Cl Pressure_Diff, div norm",
                 fmt='%.8e')
 
         print(f"Results saved to {output_dir}/")
@@ -466,29 +467,39 @@ if __name__ == "__main__":
 
 try:
     import matplotlib.pyplot as plt
-    
+
+    # Create figure and axes
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
-    
+
+    # Plot Drag Coefficient
     axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
     axes[0].set_ylabel('Drag Coefficient $C_D$')
     axes[0].grid(True)
     axes[0].set_title('DFG 2D-3 Benchmark Results')
-    
+
+    # Plot Lift Coefficient
     axes[1].plot(time_history, cl_history, 'r-', linewidth=2)
     axes[1].set_ylabel('Lift Coefficient $C_L$')
     axes[1].grid(True)
-    
+
+    # Plot Pressure Difference
     axes[2].plot(time_history, p_diff_history, 'g-', linewidth=2)
     axes[2].set_ylabel('Pressure Difference $\Delta P$')
     axes[2].set_xlabel('Time [s]')
     axes[2].grid(True)
-    
+
+    # Improve layout
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/coefficients.png", dpi=300)
-    print(f"Plot saved to {output_dir}/coefficients.png")
-    
+
+    # Define the output path and save
+    output_path = f"{output_dir}/coefficients.png"
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)  # close figure to free memory
+
+    print(f"✅ Plot saved successfully to: {output_path}")
+
 except ImportError:
-    print("Matplotlib not available for plotting")
-
-
+    print("⚠️ Matplotlib not available for plotting — skipping figure creation.")
+except Exception as e:
+    print(f"❌ Error during plotting: {e}")
 
