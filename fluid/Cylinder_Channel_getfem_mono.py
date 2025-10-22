@@ -30,14 +30,9 @@ rho_fluid = 1.0    # Density (kg/m³)
 # Inlet velocity parameters
 U_max = 1.5      # Mean inlet velocity m/s
 
-# Reference values for coefficients
-D = 1  # Cylinder diameter (you need to set this based on your mesh)
-A_ref = D   # Reference area (diameter × unit depth for 2D)
-q_inf = 0.5 * rho_fluid * U_max**2  # Dynamic pressure
-
 
 # Transient paramters: 
-T = 10.0           # Total simulation time
+T = 8.0           # Total simulation time
 dt = 1e-4       # Time step
 theta = 0.5      # Theta parameter (0.5 = Crank-Nicolson)
 
@@ -157,7 +152,7 @@ md.add_fem_data("Previous_v_f", mfv_fluid)
 The material properties and the times variable are initiualized in the model 
 """
 md.add_initialized_data("rho_f", rho_fluid)
-md.add_initialized_data("nu_f", ν_fluid)
+md.add_initialized_data("mu_f", mu_fluid)
 md.add_initialized_data("dt", dt)
 md.add_initialized_data("theta", theta)
 md.add_initialized_data("U_max", U_max)
@@ -192,7 +187,7 @@ The problem is formulated in weak form and for the time the theta method is used
 
 # FLUID : 
 # stress tensors: 
-md.add_macro('Stress_vu(v)', "rho_f*nu_f*2*Sym(Grad_v) ")
+md.add_macro('Stress_vu(v)', "mu_f*2*Sym(Grad_v) ")
 md.add_macro('Stress_p(p)', '-p*Id(2)')
 md.add_macro("Convection(v)", "(rho_f*v.Grad_v)")
 md.add_macro('Incompressibility(v)', "Trace(Grad_v)")
@@ -245,7 +240,7 @@ md.add_Dirichlet_condition_with_multipliers(mim_fluid, "v_f", mfv_fluid, CYLINDE
 ####################
 
 # Create output directory
-output_dir = "fluid/Results"
+output_dir = "fluid/results_cylinder_channel_getfem_tri_monolitich"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
@@ -279,28 +274,44 @@ while t < T:
   print(f'time is: {t} the velocity is {v_f}')
 
   
-  time_ms = int(t * 1000)  # Convert to milliseconds
-  mfv_fluid.export_to_vtu(f"{output_dir}/fluid_{time_ms:06d}.vtu",
-                        mfv_fluid, v_f, "Velocity", 
-                        mfp_fluid, p, "Pressure")
-    
+  #################################
+  # Export results
+  #################################
+
+  if step % 200 == 0: # export every 200 steps thus every  0.02s hence there are going to be 500 files
+      mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
+                      mf_v, u_new, "Velocity",
+                      mf_p, p_new, "Pressure")
+
 
 
   md.set_variable("Previous_v_f", v_f)
 
   ###### CL and CD computation ######
   traction = gf.asm_generic(mim_fluid, 0, "Stress_vu(v_f)*Normal+ Stress_p(p)*Normal", CYLINDER_INTERFACE, md)
-  Fx, Fy = -traction[0], -traction[1]
-  Cd = Fx / (q_inf * A_ref)
-  Cl = Fy / (q_inf * A_ref)
+  U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile     
+  Cd = 2 * Fx / (rho * U_mean**2 * D)
+  Cl = 2 * Fy / (rho * U_mean**2 * D)
+
+  # Pressure difference
+  try:
+      p_front = gf.compute_interpolate_on(mf_p, p_new, p_front_point)[0]
+      p_back = gf.compute_interpolate_on(mf_p, p_new, p_back_point)[0]
+      p_diff = p_front - p_back
+  except:
+      p_diff = 0.0
+  
   print(f"Time: {t:.4f}, Cd: {Cd:.6f}, Cl: {Cl:.6f}")
 
   time_history.append(t)
   cd_history.append(Cd)
-  cl_history.append(Fy)
-  np.savetxt(f"fluid/force_coefficients.txt", 
-        np.column_stack([time_history, cd_history, cl_history]),
-        header="Time, Cd, Cl")
+  cl_history.append(Cl)
+  p_diff_history.append(p_diff)
+  div_history.append(div_norm)
+  np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
+                np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
+                header="Time Cd Cl Pressure_Diff, div norm",
+                fmt='%.8e')
   
   ## some checks to see if the solution is resonable ##
   div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
@@ -311,3 +322,46 @@ while t < T:
   step += 1
   
 print("simulation completed.")
+
+#################################
+    # Plot results (optional)
+    #################################
+
+try:
+    import matplotlib.pyplot as plt
+
+    # Create figure and axes
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    # Plot Drag Coefficient
+    axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
+    axes[0].set_ylabel('Drag Coefficient $C_D$')
+    axes[0].grid(True)
+    axes[0].set_title('DFG 2D-3 Benchmark Results')
+
+    # Plot Lift Coefficient
+    axes[1].plot(time_history, cl_history, 'r-', linewidth=2)
+    axes[1].set_ylabel('Lift Coefficient $C_L$')
+    axes[1].grid(True)
+
+    # Plot Pressure Difference
+    axes[2].plot(time_history, p_diff_history, 'g-', linewidth=2)
+    axes[2].set_ylabel('Pressure Difference $\Delta P$')
+    axes[2].set_xlabel('Time [s]')
+    axes[2].grid(True)
+
+    # Improve layout
+    plt.tight_layout()
+
+    # Define the output path and save
+    output_path = f"{output_dir}/coefficients.png"
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)  # close figure to free memory
+
+    print(f"✅ Plot saved successfully to: {output_path}")
+
+except ImportError:
+    print("⚠️ Matplotlib not available for plotting — skipping figure creation.")
+except Exception as e:
+    print(f"❌ Error during plotting: {e}")
+

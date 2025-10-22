@@ -200,7 +200,7 @@ if __name__ == "__main__":
 
     h = min(Mesh.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
-    T = 10.0      # Total simulation time (s) - reduced for testing
+    T = 8.0      # Total simulation time (s) - reduced for testing
     dt = 0.0001  # Time step
     num_steps = int(T / dt)
 
