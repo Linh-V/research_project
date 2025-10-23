@@ -373,12 +373,8 @@ if __name__ == "__main__":
         md3.set_variable("u_star", u_star)
 
         md3.add_initialized_data("rho", rho)
-        md3.add_initialized_data("dt", dt)
-        md3.add_initialized_data("mu", mu)
-        md3.add_initialized_data("H", H)
-       
-        md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
-        md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
+        md3.add_initialized_data("dt", dt)md_force.add_fem_data("u_new", mf_v)
+        md_force.set_variable("u_new", u_new)w', FLUID)
 
         md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_new = md3.variable("u_new")
@@ -398,8 +394,12 @@ if __name__ == "__main__":
         md_force = gf.Model("real")
         md_force.add_fem_data("p_new", mf_p)
         md_force.set_variable("p_new", p_new)
+        
         md_force.add_fem_data("u_new", mf_v)
         md_force.set_variable("u_new", u_new)
+        
+        
+        
         md_force.add_initialized_data("mu", mu)
         # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
         traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
@@ -447,8 +447,15 @@ if __name__ == "__main__":
         u_n1 = u_n.copy()
         u_n = u_new.copy()
         p_n = p_new.copy()
-
-
+        
+        #################################
+        # Save Values if it's neccessary to reinitailize simulation
+        #################################
+    
+        
+        np.save("model1_stat.npy", md1.from_variables())
+        np.save("model2_stat.npy", md2.from_variables())
+        np.save("model3_stat.npy", md3.from_variables())
         #################################
         # Save force coefficients
         #################################
@@ -469,7 +476,8 @@ try:
     import matplotlib.pyplot as plt
 
     # Create figure and axes
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))md_force.add_fem_data("u_new", mf_v)
+        md_force.set_variable("u_new", u_new)
 
     # Plot Drag Coefficient
     axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
