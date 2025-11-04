@@ -242,7 +242,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "fluid/results_cylinder_channel_getfem_tri"
+    output_dir = "fluid/results_cylinder_channel_getfem_tri2"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -325,12 +325,12 @@ if __name__ == "__main__":
         md1.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
         
         # Boundary conditions
-        md1.add_Dirichlet_condition_with_multipliers(mim, "u", 1, INLET, "V_inlet")
-        md1.add_Dirichlet_condition_with_multipliers(mim, "u", 1, WALLS, "V_noslip")
-        md1.add_Dirichlet_condition_with_multipliers(mim, "u", 1, OBSTACLE, "V_noslip")
+        md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, INLET, "V_inlet")
+        md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_noslip")
+        md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
         
         # Solve
-        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
+        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_star = md1.variable("u")
 
         #################################
@@ -352,13 +352,9 @@ if __name__ == "__main__":
         # BC: φ = 0 at outlet
         md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
         
-        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")   
+        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")   
         phi = md2.variable("phi")
-        phi_norm = np.linalg.norm(phi)
-        print(f"  ‖φ‖ = {phi_norm:.6e}")
-        if phi_norm < 1e-12:
-            print("  ⚠️  WARNING: phi is essentially zero!")
-                
+
         #################################
         # STEP 3: Velocity correction
         #################################
@@ -373,10 +369,25 @@ if __name__ == "__main__":
         md3.set_variable("u_star", u_star)
 
         md3.add_initialized_data("rho", rho)
-        md3.add_initialized_data("dt", dt)md_force.add_fem_data("u_new", mf_v)
-        md_force.set_variable("u_new", u_new)w', FLUID)
+        md3.add_initialized_data("dt", dt)
+        md3.add_initialized_data("mu", mu)
+        md3.add_initialized_data("H", H)
+       
+        md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
+        md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
+        # Boundary conditions
 
-        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
+        V_inlet= md3.interpolation(V_inlet_expr, mf_v)
+        md3.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
+
+        V_noslip = md3.interpolation( "[0,0]" , mf_v)
+        md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
+        
+        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
+        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
+        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
+        
+        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_new = md3.variable("u_new")
 
         # Update pressure: p^{n+1} = p^n + φ
@@ -476,9 +487,8 @@ try:
     import matplotlib.pyplot as plt
 
     # Create figure and axes
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))md_force.add_fem_data("u_new", mf_v)
-        md_force.set_variable("u_new", u_new)
-
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
     # Plot Drag Coefficient
     axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
     axes[0].set_ylabel('Drag Coefficient $C_D$')
@@ -510,4 +520,6 @@ except ImportError:
     print("⚠️ Matplotlib not available for plotting — skipping figure creation.")
 except Exception as e:
     print(f"❌ Error during plotting: {e}")
+
+
 
