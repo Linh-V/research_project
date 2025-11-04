@@ -25,12 +25,12 @@ The values are taken form Turek hann paper
 
 # Artificial values for test purpose: 
 # Solid properties:
-E = 1e+5                        #kg/cms^2
+E = 1e+2                        #kg/cms^2
 nu_solid  = 0.42
 clambda = E*nu_solid/((1+nu_solid)*(1-2*nu_solid))     # First Lame coefficient (N/cm^2)
 cmu = E/(2*(1+nu_solid))                             # Second Lame coefficient (N/cm^2)
 rho_solid = 1000                                    # kg/cm^3
-mu_solid =  317e+6                                   # kg/(cm*s^2)
+mu_solid =  100                                   # kg/(cm*s^2)
 
 # Fluid propeties: 
 mu_fluid = 0.001                                   #cm^2/s
@@ -219,9 +219,7 @@ md.add_initialized_data("p_out", 0)
 
 # Time variable
 md.add_initialized_data("t", 0.0)
-md.add_initialized_data("ramp_factor", 0.0)
-# Define inlet profile as a macro (parabolic profile)
-md.add_macro("inlet_profile(y)", "1.5*U_mean*4*y*(H-y)/(H*H)")
+
 
 ########################
 ## INITIAL CONDITIONS ##
@@ -230,9 +228,6 @@ md.add_macro("inlet_profile(y)", "1.5*U_mean*4*y*(H-y)/(H*H)")
 Initialize all to zero (at rest), since we're using filtered fem variable, it's not possibble to 
 use md.interpolation. 
 """
-########################
-## INITIAL CONDITIONS ##
-########################
 
 # Get the DOF indices for each region
 
@@ -331,28 +326,38 @@ md.add_linear_term(mim, "(v_f - v_s).Test_mult_v",BEAM_INTERFACE) ##############
 # Dynamic coupling: stress balance
 # The multiplier enforces the stress continuity
 md.add_linear_term(mim, "mult.Test_u_f", BEAM_INTERFACE)
-md.add_linear_term(mim, "-mult.Test_u_s", BEAM_INTERFACE)
+md.add_linear_term(mim, "mult.Test_u_s", BEAM_INTERFACE)
 
 #####################
 # BOUNDARY CONDITIONS
 #####################
 
+inlet_dofs = mfv_fluid.basic_dof_on_region(INLET)
 
-# Inlet velocity profile (parabolic, time-dependent with smooth ramp)
+ramp_factor = 0.0
+V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]" 
+V_inlet= md.interpolation(V_inlet_expr, mfv_fluid)
+md.add_initialized_fem_data('V_inlet', mfv_fluid, V_inlet)
+V_noslip = md.interpolation( "[0,0]" , mfv_fluid)
+md.add_initialized_fem_data('V_noslip', mfv_fluid, V_noslip)
+
+# Apply Dirichlet conditions with multipliers
+md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, INLET, "V_inlet")
+md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, WALLS, "V_noslip")
+md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, CYLINDER, "V_noslip")
+md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, BEAM_INTERFACE, "V_noslip")
+md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, BEAM_LEFT, "V_noslip")
+
+
 
 md.add_Dirichlet_condition_with_multipliers(mim,'u_f', mfu_fluid, INLET)
 md.add_Dirichlet_condition_with_multipliers(mim,'u_f', mfu_fluid, OUTLET)
 md.add_Dirichlet_condition_with_multipliers(mim,'u_f', mfu_fluid, WALLS)
 md.add_Dirichlet_condition_with_multipliers(mim,'u_f', mfu_fluid, CYLINDER)
 
-penalty_coeff = 1e3 # Large penalty coefficient
-md.add_nonlinear_term(mim, f"{penalty_coeff}*(v_f - ramp_factor*[inlet_profile(X(2)), 0]).Test_v_f", INLET)
-md.add_Dirichlet_condition_with_multipliers(mim,'v_f', mfv_fluid, WALLS)
-md.add_Dirichlet_condition_with_multipliers(mim,'v_f', mfv_fluid, CYLINDER)
 
-
-md.add_Dirichlet_condition_with_multipliers(mim,'u_s', mfu_solid, BEAM_LEFT )
-md.add_Dirichlet_condition_with_multipliers(mim,'v_s', mfv_solid, BEAM_LEFT )
+md.add_Dirichlet_condition_with_multipliers(mim,'u_s', mfu_solid, BEAM_LEFT)
+md.add_Dirichlet_condition_with_multipliers(mim,'v_s', mfv_solid, BEAM_LEFT)
 
 
 
@@ -362,7 +367,7 @@ md.add_Dirichlet_condition_with_multipliers(mim,'v_s', mfv_solid, BEAM_LEFT )
 ####################
 
 # Create output directory
-output_dir = "FSI_Benchmark_Results_1mesh"
+output_dir = "FSI/FSI_Benchmark_Results_1mesh"
 os.makedirs(output_dir, exist_ok=True)
 
 # TIME STEPPING LOOP
@@ -433,12 +438,20 @@ while t < T:
     t += dt
     step += 1
     md.set_variable("t", t)
+    
+    ################################
+    # INLET BOUNDARY CONTION UPDATE#
+    ################################
+    "The inlet dirichlet b.c has to be uptadated at each iteration; because there's a ramp factor for the firs 2 seconds. "
     if t < 2.0:
         ramp_factor = 0.5 * (1 - np.cos(np.pi * t / 2.0))
-    else:
-        ramp_factor = 1.0
-    md.set_variable("ramp_factor", ramp_factor)
-    
+        V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
+        V_inlet= md.interpolation(V_inlet_expr, mfv_fluid)
+        md.set_variable('V_inlet', V_inlet)
+        md.add_Dirichlet_condition_with_multipliers(mim, "v_f", mfv_fluid, INLET, "V_inlet")
+
+
+
     
     print(f'time is: {t} and ramp_factor is {ramp_factor}')
     
