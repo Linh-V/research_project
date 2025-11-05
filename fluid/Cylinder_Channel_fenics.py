@@ -2,9 +2,49 @@ import gmsh
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-
+import tqdm.autonotebook
 
 from mpi4py import MPI
+from petsc4py import PETSc
+
+from basix.ufl import element
+
+from dolfinx.fem import (
+    Constant,
+    Function,
+    functionspace,
+    assemble_scalar,
+    dirichletbc,
+    extract_function_spaces,
+    form,
+    locate_dofs_topological,
+    set_bc,
+)
+from dolfinx.fem.petsc import (
+    apply_lifting,
+    assemble_matrix,
+    assemble_vector,
+    create_vector,
+    create_matrix,
+    set_bc,
+)
+from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+from dolfinx.io import VTXWriter, gmsh as gmshio
+from ufl import (
+    FacetNormal,
+    Measure,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    div,
+    dot,
+    dx,
+    inner,
+    lhs,
+    grad,
+    nabla_grad,
+    rhs,
+)
 
 gmsh.initialize()
 
@@ -26,10 +66,9 @@ if mesh_comm.rank == model_rank:
 fluid_marker = 1
 if mesh_comm.rank == model_rank:
     volumes = gmsh.model.getEntities(dim=gdim)
-    assert (len(volumes) == 1)
+    assert len(volumes) == 1
     gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
     gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
-
 inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
 inflow, outflow, walls, obstacle = [], [], [], []
 if mesh_comm.rank == model_rank:
@@ -40,7 +79,9 @@ if mesh_comm.rank == model_rank:
             inflow.append(boundary[1])
         elif np.allclose(center_of_mass, [L, H / 2, 0]):
             outflow.append(boundary[1])
-        elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(center_of_mass, [L / 2, 0, 0]):
+        elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(
+            center_of_mass, [L / 2, 0, 0]
+        ):
             walls.append(boundary[1])
         else:
             obstacle.append(boundary[1])
@@ -52,14 +93,6 @@ if mesh_comm.rank == model_rank:
     gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
     gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
     gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
-
-    # Create distance field from obstacle.
-# Add threshold of mesh sizes based on the distance field
-# LcMax -                  /--------
-#                      /
-# LcMin -o---------/
-#        |         |       |
-#       Point    DistMin DistMax
 res_min = r / 3
 if mesh_comm.rank == model_rank:
     distance_field = gmsh.model.mesh.field.add("Distance")
@@ -73,7 +106,6 @@ if mesh_comm.rank == model_rank:
     min_field = gmsh.model.mesh.field.add("Min")
     gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [threshold_field])
     gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
-
 if mesh_comm.rank == model_rank:
     gmsh.option.setNumber("Mesh.Algorithm", 8)
     gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
@@ -82,40 +114,37 @@ if mesh_comm.rank == model_rank:
     gmsh.model.mesh.generate(gdim)
     gmsh.model.mesh.setOrder(2)
     gmsh.model.mesh.optimize("Netgen")
-
-
-gmsh.fltk.run()
-mesh, _, ft = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
+mesh_data = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
+mesh = mesh_data.mesh
+assert mesh_data.facet_tags is not None
+ft = mesh_data.facet_tags
 ft.name = "Facet markers"
 
-
-
-t = 0
-T = 8                       # Final time
-dt = 1 / 1600                 # Time step size
+t = 0.0
+T = 8.0  # Final time
+dt = 1 / 1600  # Time step size
 num_steps = int(T / dt)
 k = Constant(mesh, PETSc.ScalarType(dt))
 mu = Constant(mesh, PETSc.ScalarType(0.001))  # Dynamic viscosity
-rho = Constant(mesh, PETSc.ScalarType(1))     # Density
+rho = Constant(mesh, PETSc.ScalarType(1))  # Density
 
 
-v_cg2 = element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim, ))
-s_cg1 = element("Lagrange", mesh.topology.cell_name(), 1)
+v_cg2 = element("Lagrange", mesh.basix_cell(), 2, shape=(mesh.geometry.dim,))
+s_cg1 = element("Lagrange", mesh.basix_cell(), 1)
 V = functionspace(mesh, v_cg2)
 Q = functionspace(mesh, s_cg1)
 
 fdim = mesh.topology.dim - 1
 
-# Define boundary conditions
-
-
-class InletVelocity():
+class InletVelocity:
     def __init__(self, t):
         self.t = t
 
     def __call__(self, x):
         values = np.zeros((gdim, x.shape[1]), dtype=PETSc.ScalarType)
-        values[0] = 4 * 1.5 * np.sin(self.t * np.pi / 8) * x[1] * (0.41 - x[1]) / (0.41**2)
+        values[0] = (
+            4 * 1.5 * np.sin(self.t * np.pi / 8) * x[1] * (0.41 - x[1]) / (0.41**2)
+        )
         return values
 
 
@@ -123,34 +152,36 @@ class InletVelocity():
 u_inlet = Function(V)
 inlet_velocity = InletVelocity(t)
 u_inlet.interpolate(inlet_velocity)
-bcu_inflow = dirichletbc(u_inlet, locate_dofs_topological(V, fdim, ft.find(inlet_marker)))
+bcu_inflow = dirichletbc(
+    u_inlet, locate_dofs_topological(V, fdim, ft.find(inlet_marker))
+)
 # Walls
 u_nonslip = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
-bcu_walls = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(wall_marker)), V)
+bcu_walls = dirichletbc(
+    u_nonslip, locate_dofs_topological(V, fdim, ft.find(wall_marker)), V
+)
 # Obstacle
-bcu_obstacle = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(obstacle_marker)), V)
+bcu_obstacle = dirichletbc(
+    u_nonslip, locate_dofs_topological(V, fdim, ft.find(obstacle_marker)), V
+)
 bcu = [bcu_inflow, bcu_obstacle, bcu_walls]
 # Outlet
-bcp_outlet = dirichletbc(PETSc.ScalarType(0), locate_dofs_topological(Q, fdim, ft.find(outlet_marker)), Q)
+bcp_outlet = dirichletbc(
+    PETSc.ScalarType(0), locate_dofs_topological(Q, fdim, ft.find(outlet_marker)), Q
+)
 bcp = [bcp_outlet]
 
-
-# We start by defining all the variables used in the variational formulations.
 u = TrialFunction(V)
 v = TestFunction(V)
-u_ = Function(V)
-u_.name = "u"
-u_s = Function(V)
+u_ = Function(V, name="u")
+u_s = Function(V, name="u_tentative")
 u_n = Function(V)
 u_n1 = Function(V)
 p = TrialFunction(Q)
 q = TestFunction(Q)
-p_ = Function(Q)
-p_.name = "p"
-phi = Function(Q)
+p_ = Function(Q, name="p")
+phi = Function(Q, name="phi")
 
-#Next, we define the variational formulation for the first step, where we have integrated the diffusion term,
-#  as well as the pressure term by parts.
 f = Constant(mesh, PETSc.ScalarType((0, 0)))
 F1 = rho / k * dot(u - u_n, v) * dx
 F1 += inner(dot(1.5 * u_n - 0.5 * u_n1, 0.5 * nabla_grad(u + u_n)), v) * dx
@@ -159,21 +190,19 @@ F1 += dot(f, v) * dx
 a1 = form(lhs(F1))
 L1 = form(rhs(F1))
 A1 = create_matrix(a1)
-b1 = create_vector(L1)
+b1 = create_vector(extract_function_spaces(L1))
 
-# second step
 a2 = form(dot(grad(p), grad(q)) * dx)
 L2 = form(-rho / k * dot(div(u_s), q) * dx)
 A2 = assemble_matrix(a2, bcs=bcp)
 A2.assemble()
-b2 = create_vector(L2)
+b2 = create_vector(extract_function_spaces(L2))
 
-# third step
 a3 = form(rho * dot(u, v) * dx)
 L3 = form(rho * dot(u_s, v) * dx - k * dot(nabla_grad(phi), v) * dx)
 A3 = assemble_matrix(a3)
 A3.assemble()
-b3 = create_vector(L3)
+b3 = create_vector(extract_function_spaces(L3))
 
 # Solver for step 1
 solver1 = PETSc.KSP().create(mesh.comm)
@@ -197,8 +226,6 @@ solver3.setType(PETSc.KSP.Type.CG)
 pc3 = solver3.getPC()
 pc3.setType(PETSc.PC.Type.SOR)
 
-
-# compute drag and lift
 n = -FacetNormal(mesh)  # Normal pointing out of obstacle
 dObs = Measure("ds", domain=mesh, subdomain_data=ft, subdomain_id=obstacle_marker)
 u_t = inner(as_vector((n[1], -n[0])), u_)
@@ -209,8 +236,7 @@ if mesh.comm.rank == 0:
     C_L = np.zeros(num_steps, dtype=PETSc.ScalarType)
     t_u = np.zeros(num_steps, dtype=np.float64)
     t_p = np.zeros(num_steps, dtype=np.float64)
-
-# evalutation points for pressure in front of the obstacel P(0.15, 0.2) and behind P(0.25, 0.2)
+    
 tree = bb_tree(mesh, mesh.geometry.dim)
 points = np.array([[0.15, 0.2, 0], [0.25, 0.2, 0]])
 cell_candidates = compute_collisions_points(tree, points)
@@ -222,10 +248,11 @@ if mesh.comm.rank == 0:
 
 
 from pathlib import Path
+
 folder = Path("results")
 folder.mkdir(exist_ok=True, parents=True)
-vtx_u = VTXWriter(mesh.comm, "dfg2D-3-u.bp", [u_], engine="BP4")
-vtx_p = VTXWriter(mesh.comm, "dfg2D-3-p.bp", [p_], engine="BP4")
+vtx_u = VTXWriter(mesh.comm, folder / "dfg2D-3-u.bp", [u_], engine="BP4")
+vtx_p = VTXWriter(mesh.comm, folder / "dfg2D-3-p.bp", [p_], engine="BP4")
 vtx_u.write(t)
 vtx_p.write(t)
 progress = tqdm.autonotebook.tqdm(desc="Solving PDE", total=num_steps)
@@ -276,7 +303,11 @@ for i in range(num_steps):
     vtx_p.write(t)
 
     # Update variable with solution form this time step
-    with u_.x.petsc_vec.localForm() as loc_, u_n.x.petsc_vec.localForm() as loc_n, u_n1.x.petsc_vec.localForm() as loc_n1:
+    with (
+        u_.x.petsc_vec.localForm() as loc_,
+        u_n.x.petsc_vec.localForm() as loc_n,
+        u_n1.x.petsc_vec.localForm() as loc_n1,
+    ):
         loc_n.copy(loc_n1)
         loc_.copy(loc_n)
 
@@ -311,7 +342,16 @@ progress.close()
 vtx_u.close()
 vtx_p.close()
 
-# verification using FEATFLOW
+A1.destroy()
+A2.destroy()
+A3.destroy()
+b1.destroy()
+b2.destroy()
+b3.destroy()
+solver1.destroy()
+solver2.destroy()
+solver3.destroy()
+
 if mesh.comm.rank == 0:
     if not os.path.exists("figures"):
         os.mkdir("figures")
@@ -321,28 +361,63 @@ if mesh.comm.rank == 0:
     turek = np.loadtxt("bdforces_lv4")
     turek_p = np.loadtxt("pointvalues_lv4")
     fig = plt.figure(figsize=(25, 8))
-    l1 = plt.plot(t_u, C_D, label=r"FEniCSx  ({0:d} dofs)".format(num_velocity_dofs + num_pressure_dofs), linewidth=2)
-    l2 = plt.plot(turek[1:, 1], turek[1:, 3], marker="x", markevery=50,
-                  linestyle="", markersize=4, label="FEATFLOW (42016 dofs)")
+    l1 = plt.plot(
+        t_u,
+        C_D,
+        label=r"FEniCSx  ({0:d} dofs)".format(num_velocity_dofs + num_pressure_dofs),
+        linewidth=2,
+    )
+    l2 = plt.plot(
+        turek[1:, 1],
+        turek[1:, 3],
+        marker="x",
+        markevery=50,
+        linestyle="",
+        markersize=4,
+        label="FEATFLOW (42016 dofs)",
+    )
     plt.title("Drag coefficient")
     plt.grid()
     plt.legend()
     plt.savefig("figures/drag_comparison.png")
 
     fig = plt.figure(figsize=(25, 8))
-    l1 = plt.plot(t_u, C_L, label=r"FEniCSx  ({0:d} dofs)".format(
-        num_velocity_dofs + num_pressure_dofs), linewidth=2)
-    l2 = plt.plot(turek[1:, 1], turek[1:, 4], marker="x", markevery=50,
-                  linestyle="", markersize=4, label="FEATFLOW (42016 dofs)")
+    l1 = plt.plot(
+        t_u,
+        C_L,
+        label=r"FEniCSx  ({0:d} dofs)".format(num_velocity_dofs + num_pressure_dofs),
+        linewidth=2,
+    )
+    l2 = plt.plot(
+        turek[1:, 1],
+        turek[1:, 4],
+        marker="x",
+        markevery=50,
+        linestyle="",
+        markersize=4,
+        label="FEATFLOW (42016 dofs)",
+    )
     plt.title("Lift coefficient")
     plt.grid()
     plt.legend()
     plt.savefig("figures/lift_comparison.png")
 
     fig = plt.figure(figsize=(25, 8))
-    l1 = plt.plot(t_p, p_diff, label=r"FEniCSx ({0:d} dofs)".format(num_velocity_dofs + num_pressure_dofs), linewidth=2)
-    l2 = plt.plot(turek[1:, 1], turek_p[1:, 6] - turek_p[1:, -1], marker="x", markevery=50,
-                  linestyle="", markersize=4, label="FEATFLOW (42016 dofs)")
+    l1 = plt.plot(
+        t_p,
+        p_diff,
+        label=r"FEniCSx ({0:d} dofs)".format(num_velocity_dofs + num_pressure_dofs),
+        linewidth=2,
+    )
+    l2 = plt.plot(
+        turek[1:, 1],
+        turek_p[1:, 6] - turek_p[1:, -1],
+        marker="x",
+        markevery=50,
+        linestyle="",
+        markersize=4,
+        label="FEATFLOW (42016 dofs)",
+    )
     plt.title("Pressure difference")
     plt.grid()
     plt.legend()
