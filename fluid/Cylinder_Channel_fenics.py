@@ -20,6 +20,7 @@ from dolfinx.fem import (
     locate_dofs_topological,
     set_bc,
 )
+
 from dolfinx.fem.petsc import (
     apply_lifting,
     assemble_matrix,
