@@ -5,6 +5,12 @@ from scipy.sparse.linalg import spsolve
 from scipy.sparse import csr_matrix
 import gmsh
 from Functions import verify_regions
+# Physical groups
+FLUID = 1
+INLET= 2
+OUTLET = 3
+WALLS = 4
+OBSTACLE = 5
 def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
     """
     Create QUADRILATERAL mesh for DFG 2D-3 benchmark
@@ -28,15 +34,15 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
     gmsh.model.occ.synchronize()
     
     # Physical groups
-    fluid_marker = 1
-    inlet_marker = 2
-    outlet_marker = 3
-    wall_marker = 4
-    obstacle_marker = 5
+    FLUID = 1
+    INLET= 2
+    OUTLET = 3
+    WALLS = 4
+    OBSTACLE = 5
     
     volumes = gmsh.model.getEntities(dim=gdim)
-    gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
-    gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
+    gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], FLUID)
+    gmsh.model.setPhysicalName(volumes[0][0], FLUID, "FLUID")
     
     # Boundary classification
     inflow, outflow, walls, obstacle = [], [], [], []
@@ -54,14 +60,14 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
         else:
             obstacle.append(boundary[1])
     
-    gmsh.model.addPhysicalGroup(1, inflow, inlet_marker)
-    gmsh.model.setPhysicalName(1, inlet_marker, "Inlet")
-    gmsh.model.addPhysicalGroup(1, outflow, outlet_marker)
-    gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
-    gmsh.model.addPhysicalGroup(1, walls, wall_marker)
-    gmsh.model.setPhysicalName(1, wall_marker, "Walls")
-    gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
-    gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
+    gmsh.model.addPhysicalGroup(1, inflow,INLET)
+    gmsh.model.setPhysicalName(1, INLET, "INLET")
+    gmsh.model.addPhysicalGroup(1, outflow, OUTLET)
+    gmsh.model.setPhysicalName(1, OUTLET, "OUTLET")
+    gmsh.model.addPhysicalGroup(1, walls, WALLS)
+    gmsh.model.setPhysicalName(1, WALLS, "WALLS")
+    gmsh.model.addPhysicalGroup(1, obstacle, OBSTACLE)
+    gmsh.model.setPhysicalName(1, OBSTACLE, "OBSTACLE")
     
     # Mesh size field
     res_min = r / 3
@@ -77,11 +83,11 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
     gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [threshold_field])
     gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
     
-    # IMPORTANT: Generate QUADRILATERAL mesh
-    gmsh.option.setNumber("Mesh.Algorithm", 8)
-    gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-    gmsh.option.setNumber("Mesh.RecombineAll", 1)        
-    gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
+    # # IMPORTANT: Generate QUADRILATERAL mesh
+    # gmsh.option.setNumber("Mesh.Algorithm", 8)
+    # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+    # gmsh.option.setNumber("Mesh.RecombineAll", 1)        
+    # gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
     
     gmsh.model.mesh.generate(gdim)
     gmsh.model.mesh.setOrder(2)  # Second order elements
@@ -105,27 +111,27 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
 
 # Generate the mesh
 if __name__ == "__main__":
-    #create_dfg_mesh("dfg_benchmark.msh", visualize=True)
+    create_dfg_mesh("dfg_benchmark.msh", visualize=False)
 
-    # ############
-    # ## MESH creation##
-    # ############
+    ############
+    ## MESH creation##
+    ############
 
-    # # Load mesh
-    #mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
-    #Mesh = gf.Mesh('import', 'gmsh', mesh_file)
-    # # Mesh.export_to_vtk('mesh_dfg.vtk')
+    # Load mesh
+    mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
+    Mesh = gf.Mesh('import', 'gmsh', mesh_file)
+    # Mesh.export_to_vtk('mesh_dfg.vtk')
 
-    # # Print mesh info
-    # print(f"Mesh dimension: {Mesh.dim()}")
-    # print(f"Number of convexes: {Mesh.nbcvs()}")
-    # print(f"Number of points: {Mesh.nbpts()}")
+    # Print mesh info
+    print(f"Mesh dimension: {Mesh.dim()}")
+    print(f"Number of convexes: {Mesh.nbcvs()}")
+    print(f"Number of points: {Mesh.nbpts()}")
 
     ###################
     ## MESH imported ##
     ###################
 
-    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
+    # Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
 
     #############
     ## REGIONS ##
@@ -135,44 +141,44 @@ if __name__ == "__main__":
 
     """
 
-    Bottom_left = 1 
-    Bottom_right = 2
-    Top_left = 3
-    Top_right = 4 
-    INLET = 5 
-    OUTLET = 7  
-    Cylinder_1 = 8
-    Cylinder_2 = 9
-    Cylinder_3 = 10
-    Cylinder_4 = 11
-    print("Regions in the mesh are:", Mesh.regions())
+    # Bottom_left = 1 
+    # Bottom_right = 2
+    # Top_left = 3
+    # Top_right = 4 
+    # INLET = 5 
+    # OUTLET = 7  
+    # Cylinder_1 = 8
+    # Cylinder_2 = 9
+    # Cylinder_3 = 10
+    # Cylinder_4 = 11
+    # print("Regions in the mesh are:", Mesh.regions())
 
-    OBSTACLE = 2001
+    # OBSTACLE = 2001
 
-    Mesh.region_merge(OBSTACLE, Cylinder_1)
-    Mesh.region_merge(OBSTACLE, Cylinder_2)
-    Mesh.region_merge(OBSTACLE, Cylinder_3)
-    Mesh.region_merge(OBSTACLE, Cylinder_4)
+    # # Mesh.region_merge(OBSTACLE, Cylinder_1)
+    # # Mesh.region_merge(OBSTACLE, Cylinder_2)
+    # # Mesh.region_merge(OBSTACLE, Cylinder_3)
+    # # Mesh.region_merge(OBSTACLE, Cylinder_4)
 
-    # physical surface: 
-    fluid1 = 6 
-    fluid2 = 12
-    fluid3 = 13
-    fluid4 = 14
-    fluid5 = 15
+    # # physical surface: 
+    # fluid1 = 6 
+    # fluid2 = 12
+    # fluid3 = 13
+    # fluid4 = 14
+    # fluid5 = 15
 
-    FLUID = 2002
-    Mesh.region_merge(FLUID,fluid1)
-    Mesh.region_merge(FLUID,fluid2)
-    Mesh.region_merge(FLUID,fluid3)
-    Mesh.region_merge(FLUID,fluid4)
-    Mesh.region_merge(FLUID,fluid5)
+    # FLUID = 2002
+    # # Mesh.region_merge(FLUID,fluid1)
+    # # Mesh.region_merge(FLUID,fluid2)
+    # # Mesh.region_merge(FLUID,fluid3)
+    # # Mesh.region_merge(FLUID,fluid4)
+    # # Mesh.region_merge(FLUID,fluid5)
 
-    WALLS  = 2003
-    Mesh.region_merge(WALLS,Bottom_left)
-    Mesh.region_merge(WALLS,Bottom_right)
-    Mesh.region_merge(WALLS,Top_left)
-    Mesh.region_merge(WALLS,Top_right)
+    # WALLS  = 2003
+    # # Mesh.region_merge(WALLS,Bottom_left)
+    # # Mesh.region_merge(WALLS,Bottom_right)
+    # # Mesh.region_merge(WALLS,Top_left)
+    # # Mesh.region_merge(WALLS,Top_right)
 
     
     
@@ -219,11 +225,11 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
-    mf_v.set_fem(gf.Fem('FEM_PK(2,2)'))
+    mf_v.set_fem(gf.Fem('FEM_PK(2,4)'))
 
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
-    mf_p.set_fem(gf.Fem('FEM_PK(2,1)'))
+    mf_p.set_fem(gf.Fem('FEM_PK(2,2)'))
 
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")

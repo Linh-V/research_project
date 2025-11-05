@@ -293,14 +293,6 @@ while t < T:
   Cd = 2 * Fx / (rho_fluid * U_mean**2 * (2*r))
   Cl = 2 * Fy / (rho_fluid * U_mean**2 * (2*r))
 
-  # Pressure difference
-  try:
-      p_front = gf.compute_interpolate_on(mfp_fluid, p, p_front_point)[0]
-      p_back = gf.compute_interpolate_on(mfp_fluid, p, p_back_point)[0]
-      p_diff = p_front - p_back
-  except:
-      p_diff = 0.0
-  
   print(f"Time: {t:.4f}, Cd: {Cd:.6f}, Cl: {Cl:.6f}")
   ## some checks to see if the solution is resonable ##
   div_norm = np.sqrt(gf.asm_generic(mim_fluid, 0, 'pow((Trace(Grad_v_f)),2)', FLUID, md))
@@ -310,12 +302,11 @@ while t < T:
   time_history.append(t)
   cd_history.append(Cd)
   cl_history.append(Cl)
-  p_diff_history.append(p_diff)
   div_history.append(div_norm)
 
   np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
-                np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
-                header="Time Cd Cl Pressure_Diff, div norm",
+                np.column_stack([time_history, cd_history, cl_history, div_history]),
+                header="Time Cd Cl div norm",
                 fmt='%.8e')
   
   
@@ -356,12 +347,6 @@ try:
     axes[1].plot(time_history, cl_history, 'r-', linewidth=2)
     axes[1].set_ylabel('Lift Coefficient $C_L$')
     axes[1].grid(True)
-
-    # Plot Pressure Difference
-    axes[2].plot(time_history, p_diff_history, 'g-', linewidth=2)
-    axes[2].set_ylabel('Pressure Difference $\Delta P$')
-    axes[2].set_xlabel('Time [s]')
-    axes[2].grid(True)
 
     # Improve layout
     plt.tight_layout()
