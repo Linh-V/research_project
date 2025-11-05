@@ -1,10 +1,10 @@
 // Cylinder Mesh
 
-Nx1 = 37; Rx1 = 1;
-Nx2 = 59; Rx2 = 1.014;
-Ny = 61; Ry = 1.8;
-Nb = 81; Rb= 0.97;
-Nc = 37; Rc= 1.00;
+Nx1 = 27; Rx1 = 1;
+Nx2 = 89; Rx2 = 1.014;
+Ny = 41; Ry = 1.8;
+Nb = 29; Rb= 0.97;
+Nc = 27; Rc= 1.00;
 // Domain points
 //+
 Point(1) = {0, 0, 0, 1.0};
