@@ -111,74 +111,74 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
 
 # Generate the mesh
 if __name__ == "__main__":
-    create_dfg_mesh("dfg_benchmark.msh", visualize=False)
+    # create_dfg_mesh("dfg_benchmark.msh", visualize=False)
 
-    ############
-    ## MESH creation##
-    ############
+    # ############
+    # ## MESH creation##
+    # ############
 
-    # Load mesh
-    mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
-    Mesh = gf.Mesh('import', 'gmsh', mesh_file)
-    # Mesh.export_to_vtk('mesh_dfg.vtk')
+    # # Load mesh
+    # mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
+    # Mesh = gf.Mesh('import', 'gmsh', mesh_file)
+    # # Mesh.export_to_vtk('mesh_dfg.vtk')
 
-    # Print mesh info
-    print(f"Mesh dimension: {Mesh.dim()}")
-    print(f"Number of convexes: {Mesh.nbcvs()}")
-    print(f"Number of points: {Mesh.nbpts()}")
+    # # Print mesh info
+    # print(f"Mesh dimension: {Mesh.dim()}")
+    # print(f"Number of convexes: {Mesh.nbcvs()}")
+    # print(f"Number of points: {Mesh.nbpts()}")
 
     ###################
     ## MESH imported ##
     ###################
 
-    # Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
+    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
 
-    #############
-    ## REGIONS ##
-    #############
+    ############
+    # REGIONS ##
+    ############
     """
     regions flagging in gmsh does not work thus it's necessary to give a region for each line or physical surface. 
 
     """
 
-    # Bottom_left = 1 
-    # Bottom_right = 2
-    # Top_left = 3
-    # Top_right = 4 
-    # INLET = 5 
-    # OUTLET = 7  
-    # Cylinder_1 = 8
-    # Cylinder_2 = 9
-    # Cylinder_3 = 10
-    # Cylinder_4 = 11
-    # print("Regions in the mesh are:", Mesh.regions())
+    Bottom_left = 1 
+    Bottom_right = 2
+    Top_left = 3
+    Top_right = 4 
+    INLET = 5 
+    OUTLET = 7  
+    Cylinder_1 = 8
+    Cylinder_2 = 9
+    Cylinder_3 = 10
+    Cylinder_4 = 11
+    print("Regions in the mesh are:", Mesh.regions())
 
-    # OBSTACLE = 2001
+    OBSTACLE = 2001
 
-    # # Mesh.region_merge(OBSTACLE, Cylinder_1)
-    # # Mesh.region_merge(OBSTACLE, Cylinder_2)
-    # # Mesh.region_merge(OBSTACLE, Cylinder_3)
-    # # Mesh.region_merge(OBSTACLE, Cylinder_4)
+    # Mesh.region_merge(OBSTACLE, Cylinder_1)
+    # Mesh.region_merge(OBSTACLE, Cylinder_2)
+    # Mesh.region_merge(OBSTACLE, Cylinder_3)
+    # Mesh.region_merge(OBSTACLE, Cylinder_4)
 
-    # # physical surface: 
-    # fluid1 = 6 
-    # fluid2 = 12
-    # fluid3 = 13
-    # fluid4 = 14
-    # fluid5 = 15
+    # physical surface: 
+    fluid1 = 6 
+    fluid2 = 12
+    fluid3 = 13
+    fluid4 = 14
+    fluid5 = 15
 
-    # FLUID = 2002
-    # # Mesh.region_merge(FLUID,fluid1)
-    # # Mesh.region_merge(FLUID,fluid2)
-    # # Mesh.region_merge(FLUID,fluid3)
-    # # Mesh.region_merge(FLUID,fluid4)
-    # # Mesh.region_merge(FLUID,fluid5)
+    FLUID = 2002
+    Mesh.region_merge(FLUID,fluid1)
+    Mesh.region_merge(FLUID,fluid2)
+    Mesh.region_merge(FLUID,fluid3)
+    Mesh.region_merge(FLUID,fluid4)
+    Mesh.region_merge(FLUID,fluid5)
 
-    # WALLS  = 2003
-    # # Mesh.region_merge(WALLS,Bottom_left)
-    # # Mesh.region_merge(WALLS,Bottom_right)
-    # # Mesh.region_merge(WALLS,Top_left)
-    # # Mesh.region_merge(WALLS,Top_right)
+    WALLS  = 2003
+    Mesh.region_merge(WALLS,Bottom_left)
+    Mesh.region_merge(WALLS,Bottom_right)
+    Mesh.region_merge(WALLS,Top_left)
+    Mesh.region_merge(WALLS,Top_right)
 
     
     
@@ -225,11 +225,11 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
-    mf_v.set_fem(gf.Fem('FEM_PK(2,4)'))
+    mf_v.set_fem(gf.Fem('FEM_PK(2,2)'))
 
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
-    mf_p.set_fem(gf.Fem('FEM_PK(2,2)'))
+    mf_p.set_fem(gf.Fem('FEM_PK(2,1)'))
 
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")
@@ -338,7 +338,7 @@ if __name__ == "__main__":
         # Solve
         md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_star = md1.variable("u")
-
+       
         #################################
         # STEP 2: Pressure correction
         #################################
@@ -395,6 +395,27 @@ if __name__ == "__main__":
         
         md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_new = md3.variable("u_new")
+
+
+         # Boundary conditions check:
+        
+        # Get the degrees of freedom on the inlet boundary
+        inlet_dofs = mf_v.basic_dof_on_region(INLET)
+
+        # Extract the interpolated inlet velocity values at those DOFs
+        V_inlet_at_dofs = V_inlet[inlet_dofs]
+
+        # Extract the computed solution values at those DOFs
+        u_new_at_inlet = u_new[inlet_dofs]
+
+        # Compare the values
+        diff = np.linalg.norm(u_new_at_inlet - V_inlet_at_dofs)
+        relative_diff = diff / np.linalg.norm(V_inlet_at_dofs) if np.linalg.norm(V_inlet_at_dofs) > 0 else diff
+
+        print(f"Inlet BC verification:")
+        print(f"  Absolute difference: {diff:.6e}")
+        print(f"  Relative difference: {relative_diff:.6e}")
+        print(f"  Max absolute difference: {np.max(np.abs(u_new_at_inlet - V_inlet_at_dofs)):.6e}")
 
         # Update pressure: p^{n+1} = p^n + φ
         p_new = p_n + phi

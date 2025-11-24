@@ -250,7 +250,7 @@ if mesh.comm.rank == 0:
 
 from pathlib import Path
 
-folder = Path("results")
+folder = Path("results_fenics")
 folder.mkdir(exist_ok=True, parents=True)
 vtx_u = VTXWriter(mesh.comm, folder / "dfg2D-3-u.bp", [u_], engine="BP4")
 vtx_p = VTXWriter(mesh.comm, folder / "dfg2D-3-p.bp", [p_], engine="BP4")
@@ -354,6 +354,8 @@ solver2.destroy()
 solver3.destroy()
 
 if mesh.comm.rank == 0:
+    np.savetxt(f"{folder}/cd_cl_time_series.txt", np.column_stack((t_u, C_D, C_L, t_p, p_diff)),
+               header="t_u  C_D  C_L  t_p  p_diff")
     if not os.path.exists("figures"):
         os.mkdir("figures")
     num_velocity_dofs = V.dofmap.index_map_bs * V.dofmap.index_map.size_global
