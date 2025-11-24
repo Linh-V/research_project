@@ -1,8 +1,7 @@
 import getfem as gf 
 import numpy as np
-import os
 import gmsh
-
+import os
 def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
     """
     Create QUADRILATERAL mesh for DFG 2D-3 benchmark
@@ -101,6 +100,10 @@ def create_dfg_mesh(mesh_file="dfg_benchmark.msh", visualize=False):
 ################################
 # Cylinder in a Fluid:
 #################################
+# Create output directory
+output_dir = "fluid/Benchmark/results_cylinder_dfg"
+os.makedirs(output_dir, exist_ok=True)
+
 '''
 The goal is to solve the full Navier-Stokes equations for a cylinder immeresed in a fluid for Re = 100.
 nu  = 0.001
@@ -136,8 +139,7 @@ mesh_file = 'dfg_benchmark.msh'  # or 'dfg_benchmark_tri.msh' for triangular
 Mesh = gf.Mesh('import', 'gmsh', mesh_file)
 # Mesh.export_to_vtk('mesh_dfg.vtk')
 
-Mesh.export_to_vtk('Cyl_mesh.vtk') 
-
+Mesh.export_to_vtk(f'{output_dir}/Cyl_mesh.vtk') 
 # Print mesh info
 print(f"Mesh dimension: {Mesh.dim()}")
 print(f"Number of convexes: {Mesh.nbcvs()}")
@@ -156,7 +158,7 @@ OBSTACLE = 5
 """
 The integration method is quadrature with 7 points, which is suitable for QK elements.  
 """
-mim_fluid = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(7)'))
+mim_fluid = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(9)'))
 
 #########################
 ## FEM ELEMENTS METHOD ##
@@ -167,10 +169,10 @@ The meshes are trilaterals, hence PK elements are used.
 ## FEM ELEMENTS: Taylor-Hood stable 
 
 mfv_fluid = gf.MeshFem(Mesh, 2)
-mfv_fluid.set_fem(gf.Fem('FEM_PK(2,2)')) #Lagrangian P2
+mfv_fluid.set_fem(gf.Fem('FEM_PK(2,4)')) #Lagrangian P2
 
 mfp_fluid = gf.MeshFem(Mesh, 1)
-mfp_fluid.set_fem(gf.Fem('FEM_PK(2,1)')) #Lagrangian P1
+mfp_fluid.set_fem(gf.Fem('FEM_PK(2,2)')) #Lagrangian P1
 
 ########################
 ## INITIAL CONDITIONS ##
@@ -184,9 +186,6 @@ p_n = np.zeros(mfp_fluid.nbdof())
 ## MODEL SOLOTION ##
 ####################
 
-# Create output directory
-output_dir = "results_cylinder_dfg"
-os.makedirs(output_dir, exist_ok=True)
 
 # Storage for results
 time_history = []
@@ -228,12 +227,14 @@ for steps in range (num_step):
 
     if steps == 0:
         # First step: use backward Euler
-        conv_term = 'rho_f*(u_n.Grad(u)).Test_u'
+        conv_term = 'rho_f*(u_n.Grad(u_u)).Test_u'
     else:
         # Subsequent steps: use Adams-Bashforth
-        conv_term = 'rho_f*((1.5*u_n - 0.5*u_n1).Grad(u)).Test_u'
-
-
+        conv_term = 'rho_f*((1.5*u_n - 0.5*u_n1).Grad(u_n)).Test_u'
+   
+    
+    temp.add_nonlinear_term(mim_fluid,
+            '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u).Test_u', FLUID)
     temp.add_linear_term(mim_fluid, 'rho_f/dt * (u-u_n).Test_u +'           #time derivative
                         f'{conv_term} +'                                    #convection  \   
                         '0.5*nu_f*(Grad(u)+Grad(u_n)):Grad_Test_u - '       #diffusion \
@@ -293,7 +294,7 @@ for steps in range (num_step):
     md2.add_initialized_data("rho_f", rho_fluid)
     md2.add_initialized_data("dt", dt)
 
-    md2.add_linear_term(mim_fluid, 'Grad_phi.Grad_Test_phi -' \
+    md2.add_linear_term(mim_fluid, 'Grad_phi.Grad_Test_phi +' \
                                     'rho_f/dt * Div_u_tent*Test_phi', FLUID)
 
     # BC: φ = 0 at outlet
@@ -397,7 +398,10 @@ for steps in range (num_step):
     p_diff_history.append(p_diff)
     
     print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
-
+    np.savetxt(f"{output_dir}/force_coefficients_channel.txt",
+        np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
+        header="Time, Cd, Cl, Pressure_Diff",
+        fmt='%.8e')
 
 #################################
 # Save last iteration
@@ -417,10 +421,7 @@ mfv_fluid.export_to_vtu(
 # Save force coefficients
 #################################
 
-np.savetxt(f"{output_dir}/force_coefficients_channel.txt",
-        np.column_stack([time_history, cd_history, cl_history, p_diff_history]),
-        header="Time, Cd, Cl, Pressure_Diff",
-        fmt='%.8e')
+
 
 print(f"Results saved to {output_dir}/")
 print(f"Final time: {t:.4f}")

@@ -42,10 +42,10 @@ if __name__ == "__main__":
 
     OBSTACLE = 2001
 
-    # Mesh.region_merge(OBSTACLE, Cylinder_1)
-    # Mesh.region_merge(OBSTACLE, Cylinder_2)
-    # Mesh.region_merge(OBSTACLE, Cylinder_3)
-    # Mesh.region_merge(OBSTACLE, Cylinder_4)
+    Mesh.region_merge(OBSTACLE, Cylinder_1)
+    Mesh.region_merge(OBSTACLE, Cylinder_2)
+    Mesh.region_merge(OBSTACLE, Cylinder_3)
+    Mesh.region_merge(OBSTACLE, Cylinder_4)
 
     # physical surface: 
     fluid1 = 6 
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     r = 0.05     # Cylinder radius
 
     # Fluid properties
-    nu = 0.001   # Dynamic viscosity (Pa·s)
+    mu = 0.001   # Dynamic viscosity (Pa·s)
     rho = 1.0    # Density (kg/m³)
 
     # Inlet velocity parameters
@@ -94,17 +94,17 @@ if __name__ == "__main__":
     h = min(Mesh.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
     T = 8.0      # Total simulation time (s) - reduced for testing
-    dt = 0.0001  # Time step
+    dt = 1/1600  # Time step
     num_steps = int(T / dt)
 
-    print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / nu}")
+    print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / mu}")
     print(f"Number of time steps: {num_steps}")
 
     ########################
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(5)'))
+    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(9)'))
 
     #########################
     ## FEM ELEMENTS ##
@@ -112,11 +112,11 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
-    mf_v.set_fem(gf.Fem('FEM_PK(2,2)'))
+    mf_v.set_fem(gf.Fem('FEM_PK(2,4)'))
 
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
-    mf_p.set_fem(gf.Fem('FEM_PK(2,1)'))
+    mf_p.set_fem(gf.Fem('FEM_PK(2,2)'))
 
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")
@@ -165,7 +165,7 @@ if __name__ == "__main__":
         # STEP 1: Tentative velocity
         #################################
         # Solve: rho/dt*(u* - u^n) + rho*(1.5*u^n - 0.5*u^{n-1})·∇u*
-        #        + nu*∇²u* = 0
+        #        + mu*∇²u* = 0
         
         md1 = gf.Model("real")
         
@@ -180,7 +180,7 @@ if __name__ == "__main__":
         md1.set_variable("p_n", p_n)    # set the previus step p, at the beginning is zero
         
         md1.add_initialized_data("rho", rho)
-        md1.add_initialized_data("nu", nu)
+        md1.add_initialized_data("mu", mu)
         md1.add_initialized_data("dt", dt)
         md1.add_initialized_data("H", H)
 
@@ -194,9 +194,9 @@ if __name__ == "__main__":
         md1.add_linear_term(mim,
             '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
         
-        # Crank-Nicolson diffusion: 0.5*(nu*∇²(u+u_n))
-        md1.add_linear_term(mim, ' 0.5*nu*(Grad_u):Grad_Test_u', FLUID) 
-        md1.add_linear_term(mim, ' 0.5*nu*(Grad_u_n):Grad_Test_u', FLUID) 
+        # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) 
 
         # Pressure from previous step
         md1.add_linear_term(mim, '- p_n*Trace(Grad_Test_u)', FLUID)
@@ -245,7 +245,9 @@ if __name__ == "__main__":
         # BC: φ = 0 at outlet
         md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
         
-        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")   
+        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        # After Step 1, check divergence of u_star
+  
         phi = md2.variable("phi")
 
         #################################
@@ -263,22 +265,22 @@ if __name__ == "__main__":
 
         md3.add_initialized_data("rho", rho)
         md3.add_initialized_data("dt", dt)
-        md3.add_initialized_data("nu", nu)
+        md3.add_initialized_data("mu", mu)
         md3.add_initialized_data("H", H)
        
         md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
         md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
         # Boundary conditions
 
-        V_inlet= md3.interpolation(V_inlet_expr, mf_v)
-        md3.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
+        # V_inlet= md3.interpolation(V_inlet_expr, mf_v)
+        # md3.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
 
-        V_noslip = md3.interpolation( "[0,0]" , mf_v)
-        md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
+        # V_noslip = md3.interpolation( "[0,0]" , mf_v)
+        # md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
         
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
         
         md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
         u_new = md3.variable("u_new")
@@ -311,6 +313,7 @@ if __name__ == "__main__":
         div_norm2 = gf.asm_generic(mim, 0,'pow((Trace(Grad_u_new)),2)',FLUID, md3 )
         div_norm = np.sqrt(div_norm2)
         print(f"‖div(u_new)‖ₗ₂ = {div_norm:.6e}")
+
         #################################
         # Compute drag and lift
         #################################
@@ -325,9 +328,9 @@ if __name__ == "__main__":
         
         
         
-        md_force.add_initialized_data("nu", nu)
+        md_force.add_initialized_data("mu", mu)
         # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
-        traction = gf.asm_generic(mim, 0, "(nu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
+        traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
         
         Fx = -traction[0]
         Fy = -traction[1]
