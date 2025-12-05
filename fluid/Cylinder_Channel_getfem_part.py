@@ -131,7 +131,7 @@ if __name__ == "__main__":
     ## MESH imported ##
     ###################
 
-    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_tri.msh')
+    Mesh= gf.Mesh('Import', 'gmsh','Benchmark/cylinder_in_channel/dfg_benchmark.msh')
 
     ############
     # REGIONS ##
@@ -141,47 +141,44 @@ if __name__ == "__main__":
 
     """
 
-    Bottom_left = 1 
-    Bottom_right = 2
-    Top_left = 3
-    Top_right = 4 
-    INLET = 5 
-    OUTLET = 7  
-    Cylinder_1 = 8
-    Cylinder_2 = 9
-    Cylinder_3 = 10
-    Cylinder_4 = 11
-    print("Regions in the mesh are:", Mesh.regions())
+    # Bottom_left = 1 
+    # Bottom_right = 2
+    # Top_left = 3
+    # Top_right = 4 
+    # INLET = 5 
+    # OUTLET = 7  
+    # Cylinder_1 = 8
+    # Cylinder_2 = 9
+    # Cylinder_3 = 10
+    # Cylinder_4 = 11
+    # print("Regions in the mesh are:", Mesh.regions())
 
-    OBSTACLE = 2001
+    # OBSTACLE = 2001
 
     # Mesh.region_merge(OBSTACLE, Cylinder_1)
     # Mesh.region_merge(OBSTACLE, Cylinder_2)
     # Mesh.region_merge(OBSTACLE, Cylinder_3)
     # Mesh.region_merge(OBSTACLE, Cylinder_4)
 
-    # physical surface: 
-    fluid1 = 6 
-    fluid2 = 12
-    fluid3 = 13
-    fluid4 = 14
-    fluid5 = 15
+    # # physical surface: 
+    # fluid1 = 6 
+    # fluid2 = 12
+    # fluid3 = 13
+    # fluid4 = 14
+    # fluid5 = 15
 
-    FLUID = 2002
-    Mesh.region_merge(FLUID,fluid1)
-    Mesh.region_merge(FLUID,fluid2)
-    Mesh.region_merge(FLUID,fluid3)
-    Mesh.region_merge(FLUID,fluid4)
-    Mesh.region_merge(FLUID,fluid5)
+    # FLUID = 2002
+    # Mesh.region_merge(FLUID,fluid1)
+    # Mesh.region_merge(FLUID,fluid2)
+    # Mesh.region_merge(FLUID,fluid3)
+    # Mesh.region_merge(FLUID,fluid4)
+    # Mesh.region_merge(FLUID,fluid5)
 
-    WALLS  = 2003
-    Mesh.region_merge(WALLS,Bottom_left)
-    Mesh.region_merge(WALLS,Bottom_right)
-    Mesh.region_merge(WALLS,Top_left)
-    Mesh.region_merge(WALLS,Top_right)
-
-    
-    
+    # WALLS  = 2003
+    # Mesh.region_merge(WALLS,Bottom_left)
+    # Mesh.region_merge(WALLS,Bottom_right)
+    # Mesh.region_merge(WALLS,Top_left)
+    # Mesh.region_merge(WALLS,Top_right)
 
     ##################
     ## PROBLEM DATA ##
@@ -207,7 +204,7 @@ if __name__ == "__main__":
     h = min(Mesh.convex_radius())
     print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
     T = 8.0      # Total simulation time (s) - reduced for testing
-    dt = 0.0001  # Time step
+    dt = 1/1600  # Time step
     num_steps = int(T / dt)
 
     print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / mu}")
@@ -248,7 +245,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "fluid/results_cylinder_channel_getfem_tri2"
+    output_dir = "results_dfg2"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -286,7 +283,7 @@ if __name__ == "__main__":
         md1 = gf.Model("real")
         
 
-        md1.add_fem_variable("u", mf_v) # u i s the variable
+        md1.add_fem_variable("u", mf_v) # u is the variable - tentative velocity
         md1.add_fem_data("u_n", mf_v) # u is the previus step
         md1.add_fem_data("u_n1", mf_v) # u is the previus to the previus step
         md1.add_fem_data("p_n", mf_p) # p is the previus step
@@ -300,23 +297,23 @@ if __name__ == "__main__":
         md1.add_initialized_data("dt", dt)
         md1.add_initialized_data("H", H)
 
-        
         # Time derivative
-        md1.add_linear_term(mim, '(rho/dt)*(u - u_n).Test_u', FLUID)
+        md1.add_linear_term(mim, '(rho/dt)*u.Test_u', FLUID)
+        md1.add_source_term(mim, '(rho/dt)*u_n.Test_u', FLUID)
         
         # Convection (Adams-Bashforth): (1.5*u_n - 0.5*u_n1)*0.5*Grad(u+un)
-        md1.add_nonlinear_term(mim,
-            '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u).Test_u', FLUID)
         md1.add_linear_term(mim,
+            '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u).Test_u', FLUID)
+        md1.add_source_term(mim,
             '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
         md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
-        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) 
+        md1.add_source_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID)
 
         # Pressure from previous step
-        md1.add_linear_term(mim, '- p_n*Trace(Grad_Test_u)', FLUID)
-        
+        md1.add_source_term(mim, 'p_n*Div_Test_u', FLUID)
+
         # Boundary conditions
         # Inlet velocity profile with ramp-up
 
@@ -336,12 +333,12 @@ if __name__ == "__main__":
         md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
         
         # Solve
-        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_star = md1.variable("u")
        
         #################################
         # STEP 2: Pressure correction
-        #################################
+        #################################   
         # Solve: ∇²φ = (rho/dt)*∇·u*
         
         md2 = gf.Model("real")
@@ -353,12 +350,12 @@ if __name__ == "__main__":
         
         # Poisson equation
         md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
-        md2.add_linear_term(mim, '(rho/dt)*Trace(Grad_u_star)*Test_phi', FLUID)
+        md2.add_source_term(mim, '-(rho/dt)*Div_u_star*Test_phi', FLUID)
         
         # BC: φ = 0 at outlet
         md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
         
-        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")   
+        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")   
         phi = md2.variable("phi")
 
         #################################
@@ -380,7 +377,8 @@ if __name__ == "__main__":
         md3.add_initialized_data("H", H)
        
         md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
-        md3.add_linear_term(mim, '-rho*u_star.Test_u_new + dt*Grad_phi.Test_u_new', FLUID)
+        md3.add_source_term(mim, 'rho*u_star.Test_u_new - dt*Grad_phi.Test_u_new', FLUID)
+
         # Boundary conditions
 
         V_inlet= md3.interpolation(V_inlet_expr, mf_v)
@@ -389,15 +387,14 @@ if __name__ == "__main__":
         V_noslip = md3.interpolation( "[0,0]" , mf_v)
         md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
         
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
-        md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
+        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
         
-        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_new = md3.variable("u_new")
 
-
-         # Boundary conditions check:
+        # Boundary conditions check:
         
         # Get the degrees of freedom on the inlet boundary
         inlet_dofs = mf_v.basic_dof_on_region(INLET)
