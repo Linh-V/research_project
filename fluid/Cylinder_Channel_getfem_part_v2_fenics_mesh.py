@@ -199,7 +199,8 @@ if __name__ == "__main__":
     # Poisson equation weak form 
     md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
     md2.add_source_term(mim, '- (rho/dt)*Div_u_star*Test_phi', FLUID) # soruce term no fem variable
-   
+    #md2.add_source_term(mim, '(rho/dt)*u_star.Grad_Test_phi', FLUID)
+
     # BC: φ = 0 at outlet
     md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
     #md2.add_Dirichlet_condition_with_simplification("phi", OUTLET)
@@ -224,7 +225,6 @@ if __name__ == "__main__":
     
     md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
     md3.add_source_term(mim, 'rho*u_star.Test_u_new - dt*Grad_phi.Test_u_new', FLUID) 
-    
    
     ##################################
     # Model to compute drag and lift #
