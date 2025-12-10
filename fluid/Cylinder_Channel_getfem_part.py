@@ -214,7 +214,7 @@ if __name__ == "__main__":
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(5)'))
+    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(9)'))
 
     #########################
     ## FEM ELEMENTS ##
@@ -245,7 +245,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "results_dfg2"
+    output_dir = "results_dfg3"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -303,24 +303,24 @@ if __name__ == "__main__":
         
         # Convection (Adams-Bashforth): (1.5*u_n - 0.5*u_n1)*0.5*Grad(u+un)
         md1.add_linear_term(mim,
-            '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u).Test_u', FLUID)
+            '((1.5*u_n - 0.5*u_n1).(0.5*Grad_u)):Test_u', FLUID)
         md1.add_source_term(mim,
-            '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
+            '-((1.5*u_n - 0.5*u_n1).(0.5*Grad_u_n)):Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
         md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
-        md1.add_source_term(mim, ' 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID)
+        md1.add_source_term(mim, ' -0.5*mu*(Grad_u_n):Grad_Test_u', FLUID)
 
         # Pressure from previous step
-        md1.add_source_term(mim, 'p_n*Div_Test_u', FLUID)
+        md1.add_source_term(mim, 'p_n.Div_Test_u', FLUID)
 
         # Boundary conditions
         # Inlet velocity profile with ramp-up
 
         inlet_dofs = mf_v.basic_dof_on_region(INLET)
 
-        ramp_factor = 1.5*np.sin(np.pi * t / 8) 
-        V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
+        ramp_factor = 4*1.5*np.sin(np.pi * t / 8) 
+        V_inlet_expr = f"{ramp_factor}*[X(2)*(H-X(2))/(H*H), 0]"
         V_inlet= md1.interpolation(V_inlet_expr, mf_v)
         md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
 
@@ -329,8 +329,13 @@ if __name__ == "__main__":
         
         # Boundary conditions
         md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, INLET, "V_inlet")
-        md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_noslip")
-        md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
+        # md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_noslip")
+        # md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
+        
+        #Imposing BC by simplification yields better results (lower divergence)
+        md1.add_Dirichlet_condition_with_simplification('u', WALLS)
+        md1.add_Dirichlet_condition_with_simplification('u', OBSTACLE)
+
         
         # Solve
         md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
@@ -350,14 +355,24 @@ if __name__ == "__main__":
         
         # Poisson equation
         md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
-        md2.add_source_term(mim, '-(rho/dt)*Div_u_star*Test_phi', FLUID)
+        md2.add_source_term(mim, '-(rho/dt)*(Div_u_star.Test_phi)', FLUID)
         
         # BC: φ = 0 at outlet
-        md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
+        # md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
+        md2.add_Dirichlet_condition_with_simplification('phi', OUTLET)
         
         md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")   
         phi = md2.variable("phi")
 
+        #Boundary condition check 
+        outlet_dofs = mf_p.basic_dof_on_region(OUTLET)
+        phi_outlet = phi[outlet_dofs]
+
+        # Compare the values
+        diff = np.linalg.norm(phi_outlet)
+
+        print(f"Outlet BC verification:")
+        print(f"  Phi at outlet: {diff:.6e}")
         #################################
         # STEP 3: Velocity correction
         #################################
@@ -377,7 +392,7 @@ if __name__ == "__main__":
         md3.add_initialized_data("H", H)
        
         md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
-        md3.add_source_term(mim, 'rho*u_star.Test_u_new - dt*Grad_phi.Test_u_new', FLUID)
+        md3.add_source_term(mim, 'rho*(u_star.Test_u_new) - dt*(Grad_phi.Test_u_new)', FLUID)
 
         # Boundary conditions
 
@@ -418,9 +433,10 @@ if __name__ == "__main__":
         p_new = p_n + phi
         
         # L2 norm of the velocity divergence
-        div_norm2 = gf.asm_generic(mim, 0,'pow((Trace(Grad_u_new)),2)',FLUID, md3 )
+        div_norm2 = gf.asm_generic(mim, 0,'pow(Div_u_new,2)',FLUID, md3 )
         div_norm = np.sqrt(div_norm2)
         print(f"‖div(u_new)‖ₗ₂ = {div_norm:.6e}")
+
         #################################
         # Compute drag and lift
         #################################
@@ -433,21 +449,33 @@ if __name__ == "__main__":
         md_force.add_fem_data("u_new", mf_v)
         md_force.set_variable("u_new", u_new)
         
-        
-        
         md_force.add_initialized_data("mu", mu)
-        # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
-        traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
+        md_force.add_initialized_data("rho", rho)
+
+        # Traction: t = σ·n = [μ(∇u + ∇u^T) - pI]·n
+        # traction = gf.asm_generic(mim, 0, "mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal", OBSTACLE, md_force)
+        # Fx = -traction[0]
+        # Fy = traction[1]
+
+        Cd = gf.asm_generic(mim, 0, "-2/0.1 * ( \
+      mu/rho*( (Grad_u_new(1,1)*Normal(2) - Grad_u_new(2,1)*Normal(1))*Normal(1) + \
+                (Grad_u_new(1,2)*Normal(2) - Grad_u_new(2,2)*Normal(1))*Normal(2) ) * Normal(2) \
+      - p_new*Normal(1) \
+    )", OBSTACLE, md_force)
+        Cl = gf.asm_generic(mim, 0, "-2/0.1 * ( \
+      mu/rho*( (Grad_u_new(1,1)*Normal(2) - Grad_u_new(2,1)*Normal(1))*Normal(1) + \
+                 (Grad_u_new(1,2)*Normal(2) - Grad_u_new(2,2)*Normal(1))*Normal(2) ) * Normal(1) \
+      + p_new*Normal(2) \
+    )", OBSTACLE, md_force)
+
+        print(Cl)
+        print(Cd)
+        # # Drag and lift coefficients
+        # D = 2 * r  # Diameter
+        # U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
         
-        Fx = -traction[0]
-        Fy = -traction[1]
-        
-        # Drag and lift coefficients
-        D = 2 * r  # Diameter
-        U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
-        
-        Cd = 2 * Fx / (rho * U_mean**2 * D)
-        Cl = 2 * Fy / (rho * U_mean**2 * D)
+        # Cd = 2 * Fx / (rho * U_mean**2 * np.pi*D)
+        # Cl = 2 * Fy / (rho * U_mean**2 * np.pi*D)
         
         # Pressure difference
         try:
@@ -464,7 +492,6 @@ if __name__ == "__main__":
         div_history.append(div_norm)
         
         print(f"  Cd={Cd:.6f}, Cl={Cl:.6f}, ΔP={p_diff:.6f}")
-        
 
         #################################
         # Export results
@@ -474,6 +501,44 @@ if __name__ == "__main__":
             mf_v.export_to_vtu(f"{output_dir}/velocity_{step:06d}.vtu",
                             mf_v, u_new, "Velocity",
                             mf_p, p_new, "Pressure")
+            
+            try:
+                import matplotlib.pyplot as plt
+
+                # Create figure and axes
+                fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+                # Plot Drag Coefficient
+                axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
+                axes[0].set_ylabel('Drag Coefficient $C_D$')
+                axes[0].grid(True)
+                axes[0].set_title('DFG 2D-3 Benchmark Results')
+
+                # Plot Lift Coefficient
+                axes[1].plot(time_history, cl_history, 'r-', linewidth=2)
+                axes[1].set_ylabel('Lift Coefficient $C_L$')
+                axes[1].grid(True)
+
+                # Plot Pressure Difference
+                axes[2].plot(time_history, p_diff_history, 'g-', linewidth=2)
+                axes[2].set_ylabel('Pressure Difference $\Delta P$')
+                axes[2].set_xlabel('Time [s]')
+                axes[2].grid(True)
+
+                # Improve layout
+                plt.tight_layout()
+
+                # Define the output path and save
+                output_path = f"{output_dir}/coefficients.png"
+                plt.savefig(output_path, dpi=300, bbox_inches='tight')
+                plt.close(fig)  # close figure to free memory
+
+                print(f"✅ Plot saved successfully to: {output_path}")
+
+            except ImportError:
+                print("⚠️ Matplotlib not available for plotting — skipping figure creation.")
+            except Exception as e:
+                print(f"❌ Error during plotting: {e}")
             
         #################################
         # Update for next time step
