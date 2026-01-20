@@ -214,7 +214,7 @@ if __name__ == "__main__":
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(9)'))
+    mim = gf.MeshIm(Mesh, gf.Integ('IM_TRIANGLE(5)'))
 
     #########################
     ## FEM ELEMENTS ##
@@ -245,7 +245,7 @@ if __name__ == "__main__":
     ## SOLVER SETUP   ##
     ####################
 
-    output_dir = "results_dfg3"
+    output_dir = "results_dfg_helpTest"
     os.makedirs(output_dir, exist_ok=True)
 
     # Storage for results
@@ -305,7 +305,7 @@ if __name__ == "__main__":
         md1.add_linear_term(mim,
             '((1.5*u_n - 0.5*u_n1).(0.5*Grad_u)):Test_u', FLUID)
         md1.add_source_term(mim,
-            '-((1.5*u_n - 0.5*u_n1).(0.5*Grad_u_n)):Test_u', FLUID)
+            '((1.5*u_n - 0.5*u_n1).(0.5*Grad_u_n)):Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
         md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
@@ -452,8 +452,8 @@ if __name__ == "__main__":
         md_force.add_initialized_data("mu", mu)
         md_force.add_initialized_data("rho", rho)
 
-        # Traction: t = σ·n = [μ(∇u + ∇u^T) - pI]·n
-        # traction = gf.asm_generic(mim, 0, "mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal", OBSTACLE, md_force)
+        # # Traction: t = σ·n = [μ(∇u + ∇u^T) - pI]·n
+        # traction = gf.asm_generic(mim, 0, "mu*((Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal", OBSTACLE, md_force)
         # Fx = -traction[0]
         # Fy = traction[1]
 
@@ -468,8 +468,6 @@ if __name__ == "__main__":
       + p_new*Normal(2) \
     )", OBSTACLE, md_force)
 
-        print(Cl)
-        print(Cd)
         # # Drag and lift coefficients
         # D = 2 * r  # Diameter
         # U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
