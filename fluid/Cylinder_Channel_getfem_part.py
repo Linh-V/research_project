@@ -196,7 +196,7 @@ if __name__ == "__main__":
     rho = 1.0    # Density (kg/m³)
 
     # Inlet velocity parameters
-    U_max = 1.5  # Maximum inlet velocity (m/s)
+    U_max = 3  # Maximum inlet velocity (m/s)
 
     # Time parameters:
 
@@ -281,7 +281,6 @@ if __name__ == "__main__":
         #        + mu*∇²u* = 0
         
         md1 = gf.Model("real")
-        
 
         md1.add_fem_variable("u", mf_v) # u is the variable - tentative velocity
         md1.add_fem_data("u_n", mf_v) # u is the previus step
@@ -298,29 +297,31 @@ if __name__ == "__main__":
         md1.add_initialized_data("H", H)
 
         # Time derivative
-        md1.add_linear_term(mim, '(rho/dt)*u.Test_u', FLUID)
-        md1.add_source_term(mim, '(rho/dt)*u_n.Test_u', FLUID)
+        md1.add_nonlinear_term(mim, '(1/dt)*u.Test_u', FLUID)
+        md1.add_source_term(mim, '(1/dt)*u_n.Test_u', FLUID)
         
         # Convection (Adams-Bashforth): (1.5*u_n - 0.5*u_n1)*0.5*Grad(u+un)
         md1.add_linear_term(mim,
-            '((1.5*u_n - 0.5*u_n1).(0.5*Grad_u)):Test_u', FLUID)
-        md1.add_source_term(mim,
-            '((1.5*u_n - 0.5*u_n1).(0.5*Grad_u_n)):Test_u', FLUID)
+            '0.5*((1.5*u_n - 0.5*u_n1).(Grad_u)).Test_u', FLUID)
+        md1.add_linear_term(mim,
+            '-0.5*((1.5*u_n - 0.5*u_n1).(Grad_Test_u)).u', FLUID)
+        # md1.add_source_term(mim,
+        #     '((1.5*u_n - 0.5*u_n1).(Grad_u_n)).Test_u', FLUID)
         
         # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))
-        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
-        md1.add_source_term(mim, ' -0.5*mu*(Grad_u_n):Grad_Test_u', FLUID)
+        md1.add_linear_term(mim, ' 0.5*mu*(Grad_u:Grad_Test_u)', FLUID) 
+        md1.add_source_term(mim, ' -0.5*mu*(Grad_u_n:Grad_Test_u)', FLUID)
 
         # Pressure from previous step
-        md1.add_source_term(mim, 'p_n.Div_Test_u', FLUID)
+        md1.add_source_term(mim, 'p_n*Div_Test_u', FLUID)
 
         # Boundary conditions
         # Inlet velocity profile with ramp-up
 
         inlet_dofs = mf_v.basic_dof_on_region(INLET)
 
-        ramp_factor = 4*1.5*np.sin(np.pi * t / 8) 
-        V_inlet_expr = f"{ramp_factor}*[X(2)*(H-X(2))/(H*H), 0]"
+        ramp_factor = 3*np.sin(np.pi * t/8)
+        V_inlet_expr = f"{ramp_factor}*4*[X(2)*(H-X(2))/(H*H), 0]"
         V_inlet= md1.interpolation(V_inlet_expr, mf_v)
         md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
 
@@ -333,10 +334,10 @@ if __name__ == "__main__":
         # md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
         
         #Imposing BC by simplification yields better results (lower divergence)
+        # md1.add_Dirichlet_condition_with_simplification('u', INLET, 'V_inlet')
         md1.add_Dirichlet_condition_with_simplification('u', WALLS)
         md1.add_Dirichlet_condition_with_simplification('u', OBSTACLE)
 
-        
         # Solve
         md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_star = md1.variable("u")
@@ -355,10 +356,11 @@ if __name__ == "__main__":
         
         # Poisson equation
         md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
-        md2.add_source_term(mim, '-(rho/dt)*(Div_u_star.Test_phi)', FLUID)
+        md2.add_source_term(mim, '-(Div_u_star*Test_phi)', FLUID)
         
         # BC: φ = 0 at outlet
-        # md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
+        # phi_outler = md1.interpolation( "0" , mf_p)
+        # md1.add_initialized_fem_data('phi_outlet', mf_p, phi_outlet)
         md2.add_Dirichlet_condition_with_simplification('phi', OUTLET)
         
         md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")   
@@ -391,21 +393,10 @@ if __name__ == "__main__":
         md3.add_initialized_data("mu", mu)
         md3.add_initialized_data("H", H)
        
-        md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
-        md3.add_source_term(mim, 'rho*(u_star.Test_u_new) - dt*(Grad_phi.Test_u_new)', FLUID)
+        md3.add_linear_term(mim, '(u_new.Test_u_new)', FLUID)
+        # md3.add_source_term(mim, '(u_star.Test_u_new) + (Grad_phi.Test_u_new)', FLUID)
+        md3.add_source_term(mim, 'u_star.Test_u_new + (phi*Div_Test_u_new)', FLUID)
 
-        # Boundary conditions
-
-        V_inlet= md3.interpolation(V_inlet_expr, mf_v)
-        md3.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
-
-        V_noslip = md3.interpolation( "[0,0]" , mf_v)
-        md3.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
-        
-        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, INLET, "V_inlet")
-        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, WALLS, "V_noslip")
-        # md3.add_Dirichlet_condition_with_multipliers(mim, "u_new", mf_v, OBSTACLE, "V_noslip")
-        
         md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "mumps")
         u_new = md3.variable("u_new")
 
@@ -430,7 +421,7 @@ if __name__ == "__main__":
         print(f"  Max absolute difference: {np.max(np.abs(u_new_at_inlet - V_inlet_at_dofs)):.6e}")
 
         # Update pressure: p^{n+1} = p^n + φ
-        p_new = p_n + phi
+        p_new = p_n + phi/dt
         
         # L2 norm of the velocity divergence
         div_norm2 = gf.asm_generic(mim, 0,'pow(Div_u_new,2)',FLUID, md3 )
