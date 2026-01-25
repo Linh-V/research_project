@@ -7,16 +7,22 @@ from Functions import verify_regions
 ###########################
 # DFG 2D-3 Benchmark: Cylinder in Channel
 ###########################
-
+"""
+The goal is to solve the full Navier-Stokes equations for a cylinder immersed in a fluid,
+following the benchmark description available at:
+https://jsdokken.com/dolfinx-tutorial/chapter2/ns_code2.html
+"""
 
 # Generate the mesh
 if __name__ == "__main__":
-    output_dir = "fluid/results_cylinder_channel_getfem_quad_fenics_stokes"
+    #output directory to save results
+    output_dir = "fluid/results_cylinder_channel_getfem_quad_fenics"
     os.makedirs(output_dir, exist_ok=True)
 
-    ###################
-    ## MESH imported ##
-    ###################
+    ##########
+    ## MESH ##
+    ##########
+    """ Same mesh as in the fenics benchmark """
 
     Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_quad_fenics.msh')
 
@@ -25,7 +31,6 @@ if __name__ == "__main__":
     ############
     """
     regions flagging in gmsh does not work thus it's necessary to give a region for each line or physical surface. 
-
     """
 
     FLUID = 1
@@ -33,15 +38,15 @@ if __name__ == "__main__":
     INLET = 7
     OUTLET = 8
     OBSTACLE = 5
-    print("Regions in the mesh are:", Mesh.regions())
-    #verify_regions(Mesh, f'{output_dir}/meshes')
 
     Mesh.region_merge(WALLS, 6)
     Mesh.region_merge(WALLS, 9)
+    print("Regions in the mesh are:", Mesh.regions())
 
     ##################
     ## PROBLEM DATA ##
     ##################
+    """ Problem parameters as in the benchmark description """
 
     # Geometry parameters
     L = 2.2      # Channel length
@@ -59,15 +64,10 @@ if __name__ == "__main__":
 
     # Time parameters:
 
-
-    h = min(Mesh.convex_radius())
-    print( f"Minimum mesh size h ={h}, and CFL = "f"{1}, thus dt should be less than {1*h/U_max}" )
     T = 8.0      # Total simulation time (s) - reduced for testing
     dt = 1/1600  # Time step
     num_steps = int(T / dt)
-
-    print(f"Reynolds number (based on diameter): {rho * 2/3*U_max * (2*r) / mu}")
-    print(f"Number of time steps: {num_steps}")
+    print(f"Total time steps: {num_steps}")
 
     ########################
     ## INTEGRATION METHOD ##
@@ -75,18 +75,18 @@ if __name__ == "__main__":
 
     mim = gf.MeshIm(Mesh, gf.Integ('IM_QUAD(5)'))
 
-    #########################
+    ##################
     ## FEM ELEMENTS ##
-    #########################
+    ##################
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
     mf_v.set_fem(gf.Fem('FEM_QK(2,2)'))
-    #mf_v.set_classical_fem(2)
+    
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
     mf_p.set_fem(gf.Fem('FEM_QK(2,1)'))
-    #mf_p.set_classical_fem(1)
+   
     print(f"Velocity DOFs: {mf_v.nbdof()}")
     print(f"Pressure DOFs: {mf_p.nbdof()}")
 
@@ -106,22 +106,28 @@ if __name__ == "__main__":
     p_front_point = np.array([[0.15], [0.2]])
     p_back_point = np.array([[0.25], [0.2]])
 
-    ####################
-    ## TIME STEPPING  ##
-    ####################
-
-    print("Starting time integration...")
-    print(f"dt = {dt}, T = {T}, steps = {num_steps}")
-
-
-
 
     ###################
     ##     Models    ##
     ###################
+    """
+    We implement a projection method with three models:
+    1. Tentative velocity
+    2. Pressure correction
+    3. Velocity correction
+
+    for the tentative velocity we use an Adams-Bashforth scheme for the convective term
+    and Crank-Nicolson for the diffusive term.
+
+    remark:
+    all the terms in the weak form with the corresponding fem variable
+    have to be written in the source term (thus as a rhs term)
+    Time derivative
+
+    """
 
     #################################
-    # Model 1: Tentative velocity
+    ## Model 1: Tentative velocity ##
     #################################
     # Solve: rho/dt*(u* - u^n) + rho*(1.5*u^n - 0.5*u^{n-1})·∇u*
     #        + mu*∇²u* = 0
@@ -132,7 +138,7 @@ if __name__ == "__main__":
     md1.add_fem_variable("u", mf_v) # u i s the variable
     md1.add_fem_data("u_n", mf_v) # u is the previus step
     md1.add_fem_data("u_n1", mf_v) # u is the previus to the previus step
-    md1.add_fem_data("p_n", mf_p) # p is the previus step
+    md1.add_fem_data("p_n", mf_p) # p is the half previus step p(n-1/2)
     
     # data
     md1.add_initialized_data("rho", rho)
@@ -140,36 +146,34 @@ if __name__ == "__main__":
     md1.add_initialized_data("dt", dt)
     md1.add_initialized_data("H", H)
 
-    # all the terms have to be written as linear/non linear term when there's the fem_variable 
-    # otherwise as source terms
-
-    # moentum equation weak form:
-    # Time derivative
+    
     md1.add_linear_term(mim, '(rho/dt)*u.Test_u', FLUID)
-    md1.add_source_term(mim, ' (rho/dt)*u_n.Test_u', FLUID)
+    md1.add_source_term(mim, '(rho/dt)*u_n.Test_u', FLUID)
 
     # Convection (Adams-Bashforth): (1.5*u_n - 0.5*u_n1)*0.5*Grad(u+un)
     md1.add_linear_term(mim,
-        '0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u).Test_u', FLUID)
+        '0.5*rho*((Grad_u).(1.5*u_n - 0.5*u_n1)).Test_u', FLUID)
     md1.add_source_term(mim,
-        '- 0.5*rho*((1.5*u_n - 0.5*u_n1).Grad_u_n).Test_u', FLUID)
+        '-0.5*rho*((Grad_u_n).(1.5*u_n - 0.5*u_n1)).Test_u', FLUID) ############
     
     # Crank-Nicolson diffusion: 0.5*(mu*∇²(u+u_n))f
     md1.add_linear_term(mim, ' 0.5*mu*(Grad_u):Grad_Test_u', FLUID) 
-    # md1.add_source_term(mim, ' - 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) 
     md1.add_source_term(mim, '- 0.5*mu*(Grad_u_n):Grad_Test_u', FLUID) 
 
     # Pressure from previous step
-    md1.add_source_term(mim, ' p_n*Div_Test_u', FLUID) # source term 
+    md1.add_source_term(mim, 'p_n*Div_Test_u', FLUID) 
     
+
     # Boundary conditions
-    # Inlet velocity profile with ramp-up: at the beggining is going to be zero
+
+    """V_inlet is zero at the first iteration 
+    then it is a parabolic profile with a ramp function up to the maximum velocity U_max, 
+    thus V_inlet = ramp(t)*[4*U_max*X(2)*(H-X(2))/(H*H), 0]
+    where ramp(t) = sin(pi*t/8)"""
+
 
     inlet_dofs = mf_v.basic_dof_on_region(INLET)
-    t = 0.0
-    ramp_factor = np.sin(np.pi * t / 8) 
-    V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
-    V_inlet= md1.interpolation(V_inlet_expr, mf_v)
+    V_inlet= md1.interpolation("[0,0]", mf_v)
     md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
 
     V_noslip = md1.interpolation( "[0,0]" , mf_v)
@@ -178,13 +182,10 @@ if __name__ == "__main__":
     md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, INLET, "V_inlet")
     md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_noslip")
     md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
-    # md1.add_Dirichlet_condition_with_simplification("u", WALLS)
-    # md1.add_Dirichlet_condition_with_simplification("u", OBSTACLE) # semplifaction shouldr remove the dof so it should be faster
 
-
-    #################################
-    # Model 2: Pressure correction
-    #################################
+    ##################################
+    ## Model 2: Pressure correction ##
+    ##################################
     # Solve: ∇²φ = (rho/dt)*∇·u*
     
     md2 = gf.Model("real")
@@ -198,15 +199,12 @@ if __name__ == "__main__":
     
     # Poisson equation weak form 
     md2.add_linear_term(mim, 'Grad_phi.Grad_Test_phi', FLUID)
-    md2.add_source_term(mim, '- (rho/dt)*Div_u_star*Test_phi', FLUID) # soruce term no fem variable
-    #md2.add_source_term(mim, '(rho/dt)*u_star.Grad_Test_phi', FLUID)
+    md2.add_source_term(mim, '-(rho/dt)*Div_u_star*Test_phi', FLUID) # the minus comes from the integration by parts of the ∇²φ
 
     # BC: φ = 0 at outlet
     md2.add_Dirichlet_condition_with_multipliers(mim, "phi", 1, OUTLET)
-    #md2.add_Dirichlet_condition_with_simplification("phi", OUTLET)
 
-
-
+    
     ################################
     # Model 3: Velocity correction #
     ################################
@@ -225,6 +223,8 @@ if __name__ == "__main__":
     
     md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
     md3.add_source_term(mim, 'rho*u_star.Test_u_new - dt*Grad_phi.Test_u_new', FLUID) 
+
+    
    
     ##################################
     # Model to compute drag and lift #
@@ -243,9 +243,6 @@ if __name__ == "__main__":
    
     ## INITIAL CONDITIONS ##
 
-    # u_n = np.zeros(mf_v.nbdof())      # u^n
-    # u_n1 = np.zeros(mf_v.nbdof())     # u^{n-1}
-    # p_n = np.zeros(mf_p.nbdof())      # p^n
     u_n =  md1.interpolation("[0,0]", mf_v)     # u^n
     u_n1 = md1.interpolation("[0,0]", mf_v)     # u^{n-1}
     p_n =  md1.interpolation("0", mf_p)    # p^n
@@ -256,49 +253,47 @@ if __name__ == "__main__":
     
 
     for step in range(num_steps):
-        t = (step + 1) * dt 
-        if step % 100 == 0:
-            print(f"Step {step}/{num_steps}, t = {t:.4f}")
         
         #################################
         # Step 1: solve Model 1 (i.e. Solve Tentative velocity )
         #################################
-        
-       
+        t = (step + 1) * dt 
+
         ramp_factor = np.sin(np.pi * t / 8) 
         V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
         V_inlet = md1.interpolation(V_inlet_expr, mf_v)
         md1.set_variable('V_inlet', V_inlet) 
 
-        md1.solve( "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
-        u_star = md1.variable("u")
         
+        md1.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        u_star = md1.variable("u")
 
         #################################
         # STEP 2: Solve Model 2 (i.e. Solve Pressure correction)
         #################################
-       
+        # tange matrix is constant but ths changes
         # Updating fem data 
-        md2.set_variable("u_star", u_star)    
-        md2.solve("max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
-        phi = md2.variable("phi")
+        md2.set_variable("u_star", u_star)   
+        md2.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        phi= md2.variable("phi")
+        
 
         #################################
         # STEP 3: Solve Model 3 (i.e. Solve Velocity correction)
         #################################
-        
+        # tange matrix is constant but ths changes
         # updating fem data:
         md3.set_variable("phi", phi)
         md3.set_variable("u_star", u_star)
-       
-        md3.solve( "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
-        u_new = md3.variable("u_new")
-
-        #################
-        # Update Values #
-        #################
+        md3.solve("noisy", "max_iter", 100, "max_res", 1e-8, "lsolver", "superlu")
+        u_new= md3.variable("u_new")
     
+
         
+
+        ##################
+        ## Values Update #
+        ##################
         
         p_new = md1.variable("p_n") + phi
 
@@ -306,10 +301,10 @@ if __name__ == "__main__":
         md1.set_variable("u_n", u_new.copy())
         md1.set_variable("p_n", p_new.copy())
                 
-
-        ############
-        # Checks: #
-        ###########
+        
+        #############
+        ## Checks: ##
+        #############
        
         # Boundary:
 
@@ -328,21 +323,23 @@ if __name__ == "__main__":
         print(f"  Relative difference: {relative_diff:.6e}")
         print(f"  Max absolute difference: {np.max(np.abs(u_new_at_inlet - V_inlet_at_dofs)):.6e}")
 
-       # Divergence: 
-
-        # L2 norm of the velocity divergence
-        div_norm2 = gf.asm_generic(mim, 0,'pow((Trace(Grad_u_new)),2)',FLUID, md3 )
-        div_norm = np.sqrt(div_norm2)
-        print(f"‖div(u_new)‖ₗ₂ = {div_norm:.6e}")
-
-        #########################
-        # Compute drag and lift #
-        #########################
+        #################
+        ## Divergence: ##
+        #################
+       
         
         md_force.set_variable("p_new", p_new)
         md_force.set_variable("u_new", u_new)
         
         
+        # L2 norm of the velocity divergence
+        div_norm2 = gf.asm_generic(mim, 0,'pow(Div_u_new,2)',FLUID, md_force)
+        div_norm = np.sqrt(div_norm2)
+        print(f"‖div(u_new)‖ₗ₂ = {div_norm:.6e}")
+
+         #########################
+        # Compute drag and lift #
+        #########################
         # Traction: σ·n = [μ(∇u + ∇u^T) - pI]·n
         traction = gf.asm_generic(mim, 0, "(mu*(Grad_u_new + Grad_u_new') - p_new*Id(2))*Normal",OBSTACLE, md_force)
         
@@ -382,82 +379,16 @@ if __name__ == "__main__":
                             mf_v, u_new, "Velocity",
                             mf_p, p_new, "Pressure")
             
-    
-        
-        #################################
-        # Save Values if it's neccessary to reinitailize simulation
-        #################################
-    
-        if step % 80 == 0:
-            np.save(f"{output_dir}/model1_stat.npy", md1.from_variables())
-            np.save(f"{output_dir}/model2_stat.npy", md2.from_variables())
-            np.save(f"{output_dir}/model3_stat.npy", md3.from_variables())
         #################################
         # Save force coefficients
         #################################
 
-        np.savetxt(f"{output_dir}/force_coefficients_channel_triangle.txt",
+        np.savetxt(f"{output_dir}/force_coefficients_channel.txt",
                 np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
                 header="Time Cd Cl Pressure_Diff, div norm",
                 fmt='%.8e')
 
-        print(f"Results saved to {output_dir}/")
-        print(f"Final time: {t:.4f}")
 
-    #################################
-    # Plot results (optional)
-    #################################
-
-try:
-    import matplotlib.pyplot as plt
-
-    # Create figure and axes
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
-    
-    # Plot Drag Coefficient
-    axes[0].plot(time_history, cd_history, 'b-', linewidth=2)
-    axes[0].set_ylabel('Drag Coefficient $C_D$')
-    axes[0].grid(True)
-    axes[0].set_title('DFG 2D-3 Benchmark Results')
-
-    # Plot Lift Coefficient
-    axes[1].plot(time_history, cl_history, 'r-', linewidth=2)
-    axes[1].set_ylabel('Lift Coefficient $C_L$')
-    axes[1].grid(True)
-
-    # Plot Pressure Difference
-    axes[2].plot(time_history, p_diff_history, 'g-', linewidth=2)
-    axes[2].set_ylabel('Pressure Difference $\Delta P$')
-    axes[2].set_xlabel('Time [s]')
-    axes[2].grid(True)
-
-    # Improve layout
-    plt.tight_layout()
-
-    # Define the output path and save
-    output_path = f"{output_dir}/coefficients.png"
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close(fig)  # close figure to free memory
-
-    print(f"✅ Plot saved successfully to: {output_path}")
-
-except ImportError:
-    print("⚠️ Matplotlib not available for plotting — skipping figure creation.")
-except Exception as e:
-    print(f"❌ Error during plotting: {e}")
-
-# Reduce the type of the problem:
-# use a coarse mesh to check  
-# first) no time step
-# second) stoke problem
-# germond 2006 review of splitting scheme (an  overview on projection method)
-# hyp to satisfy: we have to satisfy some hypothesis for initialization
-
-# dirichlet semplifaction: doens't impose anything and then it's  better to make it faster
-# Initilaization: 
- 
-# STRATEGY
-# add variable -> we constructy the state vector
-# 
-
-# we can conmstruct only one time the matrix  outside the loop.
+########## to do #########
+# - try to updated the quad mesh  and run a simulation with that or higher order elements??
+# - 
