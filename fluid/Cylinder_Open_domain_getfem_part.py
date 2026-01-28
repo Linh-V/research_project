@@ -5,18 +5,17 @@ from Functions import verify_regions
 
 
 ###########################
-# DFG 2D-3 Benchmark: Cylinder in Channel
+# Cylinder in Open Domain #
 ###########################
 """
-The goal is to solve the full Navier-Stokes equations for a cylinder immersed in a fluid,
-following the benchmark description available at:
-https://jsdokken.com/dolfinx-tutorial/chapter2/ns_code2.html
+By using GetFEM we implement the benchmark "Cylinder in Open Domain", we solve now the cylinder
+in a uniform flow. The reynolds number is Re=100.
 """
 
 # Generate the mesh
 if __name__ == "__main__":
     #output directory to save results
-    output_dir = "fluid/results_cylinder_channel_getfem_quad_fenics_new_mesh_ahahhaah"
+    output_dir = "fluid/results_cylinder_opendomain"
     os.makedirs(output_dir, exist_ok=True)
 
     ##########
@@ -24,7 +23,7 @@ if __name__ == "__main__":
     ##########
     """ Same mesh as in the fenics benchmark """
 
-    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_channel_from_python.msh')
+    Mesh= gf.Mesh('Import', 'gmsh','fluid/Mesh/cylinder_opendomain.msh')
 
     ############
     # REGIONS ##
@@ -32,7 +31,8 @@ if __name__ == "__main__":
     """
     regions flagging in gmsh does not work thus it's necessary to give a region for each line or physical surface. 
     """
-
+    
+    
     FLUID = 1
     WALLS = 10
     INLET = 7
@@ -42,26 +42,26 @@ if __name__ == "__main__":
     Mesh.region_merge(WALLS, 6)
     Mesh.region_merge(WALLS, 9)
     print("Regions in the mesh are:", Mesh.regions())
-    #verify_regions(Mesh, base_filename=f"{output_dir}/mesh_regions")
     ##################
     ## PROBLEM DATA ##
     ##################
-    """ Problem parameters as in the benchmark description """
+    """ Problem parameters are similar to cylinder channel benchmark. However, becuase the 
+     radius is different velocity is chnaged to have Re=100, moreover becuas ethe velocity is not parabolic
+     is set was is the mean velocity in the parabolic case."""
 
     # Geometry parameters
-    L = 2.2      # Channel length
-    H = 0.41     # Channel height
-    c_x = 0.2    # Cylinder center x
-    c_y = 0.2    # Cylinder center y
-    r = 0.05     # Cylinder radius
+    r = 0.05    # Cylinder radius
 
     # Fluid properties
     mu = 0.001   # Dynamic viscosity (Pa·s)
     rho = 1.0    # Density (kg/m³)
 
     # Inlet velocity parameters
-    U_max = 1.5  # Maximum inlet velocity (m/s)
+    
+    U_inf = 1  # Maximum inlet velocity (m/s)
 
+    print(f"Reynolds number: Re = {rho * U_inf * 2 * r / mu}")
+  
     # Time parameters:
 
     T = 8.0      # Total simulation time (s) - reduced for testing
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     ## INTEGRATION METHOD ##
     ########################
 
-    mim = gf.MeshIm(Mesh, gf.Integ('IM_QUAD(17)'))
+    mim = gf.MeshIm(Mesh, gf.Integ('IM_QUAD(5)'))
 
     ##################
     ## FEM ELEMENTS ##
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     # Velocity: P2 elements (quadratic)
     mf_v = gf.MeshFem(Mesh, 2)
-    mf_v.set_fem(gf.Fem('FEM_QK(2,3)'))
+    mf_v.set_fem(gf.Fem('FEM_QK(2,2)'))
     
     # Pressure: P1 elements (linear)
     mf_p = gf.MeshFem(Mesh, 1)
@@ -109,7 +109,6 @@ if __name__ == "__main__":
     """
     p_front_point = np.array([[0.15], [0.2]])
     p_back_point = np.array([[0.25], [0.2]])
-
 
     ###################
     ##     Models    ##
@@ -148,7 +147,7 @@ if __name__ == "__main__":
     md1.add_initialized_data("rho", rho)
     md1.add_initialized_data("mu", mu)
     md1.add_initialized_data("dt", dt)
-    md1.add_initialized_data("H", H)
+    md1.add_initialized_data("U_inf", U_inf)
 
     
     md1.add_linear_term(mim, '(rho/dt)*u.Test_u', FLUID)
@@ -170,21 +169,21 @@ if __name__ == "__main__":
 
     # Boundary conditions
 
-    """V_inlet is zero at the first iteration 
-    then it is a parabolic profile with a ramp function up to the maximum velocity U_max, 
-    thus V_inlet = ramp(t)*[4*U_max*X(2)*(H-X(2))/(H*H), 0]
+    """V_inf is zero at the first iteration 
+    then it is a uniform profile with a ramp function up to the maximum velocity U_inf, 
+    thus V_inf = ramp(t)*U_inf
     where ramp(t) = sin(pi*t/8)"""
 
 
     inlet_dofs = mf_v.basic_dof_on_region(INLET)
-    V_inlet= md1.interpolation("[0,0]", mf_v)
-    md1.add_initialized_fem_data('V_inlet', mf_v, V_inlet)
+    V_inf= md1.interpolation("[0,0]", mf_v)
+    md1.add_initialized_fem_data('V_inf', mf_v, V_inf)
 
     V_noslip = md1.interpolation( "[0,0]" , mf_v)
     md1.add_initialized_fem_data('V_noslip', mf_v, V_noslip)
     
-    md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, INLET, "V_inlet")
-    md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_noslip")
+    md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, INLET, "V_inf")
+    md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, WALLS, "V_inf")
     md1.add_Dirichlet_condition_with_multipliers(mim, "u", mf_v, OBSTACLE, "V_noslip")
 
     ##################################
@@ -223,7 +222,7 @@ if __name__ == "__main__":
     md3.add_initialized_data("rho", rho)
     md3.add_initialized_data("dt", dt)
     md3.add_initialized_data("mu", mu)
-    md3.add_initialized_data("H", H)
+   
     
     md3.add_linear_term(mim, 'rho*u_new.Test_u_new', FLUID)
     md3.add_source_term(mim, 'rho*u_star.Test_u_new - dt*Grad_phi.Test_u_new', FLUID) 
@@ -264,9 +263,9 @@ if __name__ == "__main__":
         t = (step + 1) * dt 
 
         ramp_factor = np.sin(np.pi * t / 8) 
-        V_inlet_expr = f"{ramp_factor}*[4*1.5*X(2)*(H-X(2))/(H*H), 0]"
-        V_inlet = md1.interpolation(V_inlet_expr, mf_v)
-        md1.set_variable('V_inlet', V_inlet) 
+        V_inf = f"{ramp_factor}*[U_inf, 0]"
+        V_inf = md1.interpolation(V_inf, mf_v)
+        md1.set_variable('V_inf', V_inf) 
 
         
         md1.solve("noisy", "max_iter", 100, "max_res", 1e-12, "lsolver", "superlu")
@@ -313,19 +312,19 @@ if __name__ == "__main__":
         # Boundary:
 
         # Extract the interpolated inlet velocity values at those DOFs
-        V_inlet_at_dofs = V_inlet[inlet_dofs]
+        V_inf_at_dofs = V_inf[inlet_dofs]
 
         # Extract the computed solution values at those DOFs
         u_new_at_inlet = u_new[inlet_dofs]
 
         # Compare the values
-        diff = np.linalg.norm(u_new_at_inlet - V_inlet_at_dofs)
-        relative_diff = diff / np.linalg.norm(V_inlet_at_dofs) if np.linalg.norm(V_inlet_at_dofs) > 0 else diff
+        diff = np.linalg.norm(u_new_at_inlet - V_inf_at_dofs)
+        relative_diff = diff / np.linalg.norm(V_inf_at_dofs) if np.linalg.norm(V_inf_at_dofs) > 0 else diff
 
         print(f"Inlet BC verification:")
         print(f"  Absolute difference: {diff:.6e}")
         print(f"  Relative difference: {relative_diff:.6e}")
-        print(f"  Max absolute difference: {np.max(np.abs(u_new_at_inlet - V_inlet_at_dofs)):.6e}")
+        print(f"  Max absolute difference: {np.max(np.abs(u_new_at_inlet - V_inf_at_dofs)):.6e}")
 
         #################
         ## Divergence: ##
@@ -352,10 +351,10 @@ if __name__ == "__main__":
         
         # Drag and lift coefficients
         D = 2 * r  # Diameter
-        U_mean = 2.0 / 3.0 * U_max  # Average velocity for parabolic profile
         
-        Cd = 2 * Fx / (rho * U_mean**2 * D)
-        Cl = 2 * Fy / (rho * U_mean**2 * D)
+        
+        Cd = 2 * Fx / (rho * U_inf**2 * D)
+        Cl = 2 * Fy / (rho * U_inf**2 * D)
         
         # Pressure difference
         try:
@@ -387,7 +386,7 @@ if __name__ == "__main__":
         # Save force coefficients
         #################################
 
-        np.savetxt(f"{output_dir}/force_coefficients_channel.txt",
+        np.savetxt(f"{output_dir}/force_coefficients_opendomain.txt",
                 np.column_stack([time_history, cd_history, cl_history, p_diff_history, div_history]),
                 header="Time Cd Cl Pressure_Diff, div norm",
                 fmt='%.8e')

@@ -59,12 +59,14 @@ Mesh.Algorithm = 8;                    // Frontal-Delaunay for quads
 Mesh.RecombinationAlgorithm = 2;       // Simple full-quad recombination
 Mesh.RecombineAll = 1;                 // Recombine all triangles
 Mesh.SubdivisionAlgorithm = 1;         // All quadrangles
-Mesh.ElementOrder = 2;                 // Second order elements
 
 // Generate mesh
 Mesh 2;
-Mesh.Optimize = 1;
-Mesh.OptimizeNetgen = 1;               // Equivalent to Python's gmsh.model.mesh.optimize("Netgen")
+Mesh.ElementOrder = 2;                 // Second order elements
+SetOrder 2;
 
+// Then optimize
+Mesh.Optimize = 1;
+OptimizeMesh "Netgen";
 // Save mesh
 Save "cylinder_channel_quad_fenics.msh";

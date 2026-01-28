@@ -115,6 +115,8 @@ if mesh_comm.rank == model_rank:
     gmsh.model.mesh.generate(gdim)
     gmsh.model.mesh.setOrder(2)
     gmsh.model.mesh.optimize("Netgen")
+
+    gmsh.write("fluid/Mesh/cylinder_channel_from_python.msh")
 mesh_data = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
 mesh = mesh_data.mesh
 assert mesh_data.facet_tags is not None

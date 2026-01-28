@@ -1,0 +1,9 @@
+*.vtu
+*.vtu
+*.vtk
+*.msh
+*.npy
+*.zip
+Results_*/
+*_results/
+*results*/

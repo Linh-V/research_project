@@ -7,12 +7,6 @@ gf.util_trace_level(1)
 gf.util_warning_level(1)
 π = np.pi
 
-# STUFF TO DO: 
-# 1) check the regions
-# 2) Change to pk elements
-# 3) impose correctly B.C (displacements = 0 just remove the degree of freedom)
-# 4) check the weak formulation
-
 
 ##################
 ## PROBLEM DATA ##
