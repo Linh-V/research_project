@@ -174,7 +174,7 @@ Curve Loop(21) = {28, 24, 25,26};
 Plane Surface(21) = {21};
 
 //TRANSFINITE CURVE DEFINITIONS
-N_mult = 2;
+N_mult = 1.2;
 N1 = N_mult*4;
 N2= N_mult*4;
 N3 = N_mult*6;
